@@ -1,0 +1,16 @@
+{
+  "name": "voxel-level-tool",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @voxel/editor",
+    "build": "npm run build -w @voxel/editor",
+    "preview": "npm run preview -w @voxel/editor"
+  },
+  "dependencies": {
+    "voxel-level-tool": "file:"
+  }
+}

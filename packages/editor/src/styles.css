@@ -1,0 +1,259 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+  background: #1a1a1f;
+  color: #e8e8ec;
+}
+
+#root {
+  position: relative;
+}
+
+.canvas-wrap {
+  position: absolute;
+  inset: 0;
+}
+
+.toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  background: rgba(28, 28, 34, 0.9);
+  border: 1px solid #34343c;
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  max-width: calc(100vw - 24px);
+}
+
+.toolbar button {
+  background: #2c2c34;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 7px;
+  padding: 7px 11px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.toolbar button:hover {
+  background: #38384280;
+  border-color: #55555f;
+}
+
+.toolbar button.active {
+  background: #3b6ea5;
+  border-color: #4b86c9;
+}
+
+.toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.toolbar .sep {
+  width: 1px;
+  align-self: stretch;
+  background: #3c3c46;
+  margin: 0 2px;
+}
+
+.toolbar input[type='color'] {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #3c3c46;
+  border-radius: 7px;
+  background: none;
+  cursor: pointer;
+}
+
+.palette-area {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.swatches {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+  max-width: 320px;
+}
+
+.swatches .swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #3c3c46;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.swatches .swatch.active {
+  border-color: #fff;
+  box-shadow:
+    0 0 0 2px #1c1c22,
+    0 0 0 3px #7fd6ff;
+}
+
+.palette-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: 220px;
+  background: rgba(28, 28, 34, 0.97);
+  border: 1px solid #3c3c46;
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.pal-title {
+  font-size: 12px;
+  color: #9a9aa5;
+  margin-bottom: 8px;
+}
+
+.pal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.pal-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pal-row input[type='color'] {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #3c3c46;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  flex: none;
+}
+
+.pal-hex {
+  flex: 1;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #cfcfd6;
+}
+
+.pal-del {
+  background: #2c2c34;
+  color: #e88;
+  border: 1px solid #3c3c46;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.pal-del:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pal-add {
+  width: 100%;
+  margin-top: 8px;
+  background: #2c2c34;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 7px;
+  padding: 7px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.pal-add:hover {
+  background: #38384280;
+}
+
+.toolbar .count {
+  font-size: 12px;
+  color: #9a9aa5;
+  margin-left: 4px;
+}
+
+.drag-hint {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  font-size: 12px;
+  color: #e8e8ec;
+  background: rgba(20, 20, 26, 0.9);
+  border: 1px solid #4b86c9;
+  border-radius: 6px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.hud {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #cfcfd6;
+  background: rgba(28, 28, 34, 0.85);
+  border: 1px solid #34343c;
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-width: 120px;
+  pointer-events: none;
+}
+
+.hud-k {
+  color: #8a8a95;
+  display: inline-block;
+  min-width: 44px;
+}
+
+.hint {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 10;
+  font-size: 12px;
+  color: #8a8a95;
+  background: rgba(28, 28, 34, 0.8);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #34343c;
+  line-height: 1.6;
+}
+
+.hint b {
+  color: #cfcfd6;
+}
