@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../store';
 import { PalettePanel } from './PalettePanel';
+import { ImportImagePanel } from './ImportImagePanel';
 
 export function Toolbar() {
   const color = useEditor((s) => s.color);
@@ -21,8 +22,10 @@ export function Toolbar() {
   const importJSON = useEditor((s) => s.importJSON);
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const imgFileRef = useRef<HTMLInputElement>(null);
   const palAreaRef = useRef<HTMLDivElement>(null);
   const [palOpen, setPalOpen] = useState(false);
+  const [imgFile, setImgFile] = useState<File | null>(null);
 
   // Click ra ngoài vùng bảng màu -> đóng popup.
   useEffect(() => {
@@ -135,10 +138,30 @@ export function Toolbar() {
       <button onClick={() => fileRef.current?.click()} title="Nhập level từ JSON">
         ⬆ Import
       </button>
+      <button
+        onClick={() => imgFileRef.current?.click()}
+        title="Tạo khối từ ảnh 2D (mở hộp chọn ảnh)"
+      >
+        🖼 Ảnh
+      </button>
       <button onClick={() => count && confirm('Xóa toàn bộ level?') && clear()}>
         🗑 Clear
       </button>
       <span className="count">{count} khối</span>
+      <input
+        ref={imgFileRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) setImgFile(f); // chọn xong ảnh mới vào trang import
+        }}
+      />
+      {imgFile && (
+        <ImportImagePanel initialFile={imgFile} onClose={() => setImgFile(null)} />
+      )}
       <input
         ref={fileRef}
         type="file"

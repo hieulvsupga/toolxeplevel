@@ -82,6 +82,8 @@ interface EditorState {
   paint: (cells: Cell[], color: string) => void;
   place: (x: number, y: number, z: number) => void;
   remove: (x: number, y: number, z: number) => void;
+  /** Dán một loạt voxel nhiều màu (dùng cho import ảnh) — gộp 1 undo. */
+  stampVoxels: (items: { x: number; y: number; z: number; color: string }[]) => void;
   undo: () => void;
   redo: () => void;
   clear: () => void;
@@ -185,6 +187,24 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   place: (x, y, z) => get().fill([[x, y, z]], { color: get().color }),
   remove: (x, y, z) => get().fill([[x, y, z]], null),
+
+  stampVoxels: (items) => {
+    const { grid, undoStack } = get();
+    const changes: Batch = [];
+    for (const { x, y, z, color } of items) {
+      const before = grid.get(x, y, z);
+      if (before && before.color === color) continue;
+      const after: Voxel = { color };
+      grid.set(x, y, z, after);
+      changes.push({ x, y, z, before, after });
+    }
+    if (!changes.length) return;
+    set({
+      version: get().version + 1,
+      undoStack: [...undoStack, changes],
+      redoStack: [],
+    });
+  },
 
   undo: () => {
     const { grid, undoStack, redoStack } = get();
