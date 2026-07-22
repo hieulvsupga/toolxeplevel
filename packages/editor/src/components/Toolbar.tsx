@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../store';
 import { PalettePanel } from './PalettePanel';
 import { ImportImagePanel } from './ImportImagePanel';
+import { ImportModelPanel } from './ImportModelPanel';
 
 export function Toolbar() {
   const color = useEditor((s) => s.color);
@@ -23,9 +24,11 @@ export function Toolbar() {
 
   const fileRef = useRef<HTMLInputElement>(null);
   const imgFileRef = useRef<HTMLInputElement>(null);
+  const modelFileRef = useRef<HTMLInputElement>(null);
   const palAreaRef = useRef<HTMLDivElement>(null);
   const [palOpen, setPalOpen] = useState(false);
   const [imgFile, setImgFile] = useState<File | null>(null);
+  const [modelFile, setModelFile] = useState<File | null>(null);
 
   // Click ra ngoài vùng bảng màu -> đóng popup.
   useEffect(() => {
@@ -144,6 +147,12 @@ export function Toolbar() {
       >
         🖼 Ảnh
       </button>
+      <button
+        onClick={() => modelFileRef.current?.click()}
+        title="Tạo khối từ model 3D (.fbx .glb .gltf .obj .stl)"
+      >
+        🧊 Model
+      </button>
       <button onClick={() => count && confirm('Xóa toàn bộ level?') && clear()}>
         🗑 Clear
       </button>
@@ -161,6 +170,20 @@ export function Toolbar() {
       />
       {imgFile && (
         <ImportImagePanel initialFile={imgFile} onClose={() => setImgFile(null)} />
+      )}
+      <input
+        ref={modelFileRef}
+        type="file"
+        accept=".fbx,.glb,.gltf,.obj,.stl"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) setModelFile(f);
+        }}
+      />
+      {modelFile && (
+        <ImportModelPanel initialFile={modelFile} onClose={() => setModelFile(null)} />
       )}
       <input
         ref={fileRef}

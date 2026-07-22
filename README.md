@@ -45,9 +45,20 @@ Build/typecheck: `npm run build`
   (`crossSectionZRange` trong imageVoxelizer.ts). Đổ màu: **Theo ảnh** (mặc định, tô
   theo cột) hoặc **Bọc 4 mặt** (mặt trước/sau tô theo X, trái/phải theo Z → nhìn từ 4
   hướng chính đều thấy ảnh gốc)
+## Import model 3D → khối
+
+- Nạp `.fbx .glb .gltf .obj .stl`, voxel hóa đặc (solid) bằng ray-casting theo cột —
+  xem [modelVoxelizer.ts](packages/editor/src/lib/modelVoxelizer.ts)
+- **Xem trước 3D trực tiếp** trong panel (r3f + OrbitControls), voxel hóa lại theo thời
+  gian thực khi đổi độ phân giải / màu / texture
+- Chọn độ phân giải (số ô theo cạnh dài nhất)
+- Màu: **theo model** (vật liệu), **theo texture** (nạp ảnh texture → lấy màu theo UV mặt
+  cắt, cần model có UV), hoặc **1 màu**
+- Cần model **kín mặt** để lấp trong đúng; model Z-up có thể bị nằm ngang (xoay nguồn trước)
+
 ## Lộ trình tiếp theo
 
-- [ ] Import model 3D → voxel (voxelization trong WebWorker)
 - [ ] AI gen hình (API hoặc procedural)
+- [ ] Voxel hóa trong WebWorker (model nặng khỏi đơ UI), tuỳ chọn trục Up
 - [ ] Tối ưu render lớn (greedy meshing), theo layer, symmetry mirror
 ```
