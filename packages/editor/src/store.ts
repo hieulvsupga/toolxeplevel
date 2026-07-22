@@ -66,10 +66,14 @@ interface EditorState {
   mode: ToolMode;
   mirrorX: boolean;
   mirrorZ: boolean;
+  /** Lọc hiển thị theo màu. Rỗng = hiện tất cả; có phần tử = chỉ hiện các màu này. */
+  colorFilter: string[];
   undoStack: Batch[];
   redoStack: Batch[];
 
   setColor: (color: string) => void;
+  toggleColorFilter: (color: string) => void;
+  clearColorFilter: () => void;
   addPaletteColor: () => void;
   setPaletteColor: (index: number, color: string) => void;
   removePaletteColor: (index: number) => void;
@@ -119,10 +123,19 @@ export const useEditor = create<EditorState>((set, get) => ({
   mode: 'place',
   mirrorX: false,
   mirrorZ: false,
+  colorFilter: [],
   undoStack: [],
   redoStack: [],
 
   setColor: (color) => set({ color }),
+
+  toggleColorFilter: (color) =>
+    set((s) => ({
+      colorFilter: s.colorFilter.includes(color)
+        ? s.colorFilter.filter((c) => c !== color)
+        : [...s.colorFilter, color],
+    })),
+  clearColorFilter: () => set({ colorFilter: [] }),
 
   addPaletteColor: () => set((s) => ({ palette: [...s.palette, randomColor()] })),
 

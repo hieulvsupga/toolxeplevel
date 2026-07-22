@@ -25,18 +25,21 @@ const EDGES: [number, number, number, number, number, number][] = [
 export function VoxelEdges() {
   const grid = useEditor((s) => s.grid);
   const version = useEditor((s) => s.version);
+  const colorFilter = useEditor((s) => s.colorFilter);
   const geomRef = useRef<THREE.BufferGeometry>(null);
 
   const positions = useMemo(() => {
+    const keep = colorFilter.length ? new Set(colorFilter) : null;
     const pts: number[] = [];
-    for (const { x, y, z } of grid.entries()) {
+    for (const { x, y, z, voxel } of grid.entries()) {
+      if (keep && !keep.has(voxel.color)) continue; // ẩn viền của khối bị lọc
       for (const [ax, ay, az, bx, by, bz] of EDGES) {
         pts.push(x + ax, y + ay, z + az, x + bx, y + by, z + bz);
       }
     }
     return new Float32Array(pts);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [grid, version]);
+  }, [grid, version, colorFilter]);
 
   useLayoutEffect(() => {
     const g = geomRef.current;

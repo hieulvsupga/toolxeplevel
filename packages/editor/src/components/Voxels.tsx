@@ -25,11 +25,27 @@ export function Voxels({ onHover }: VoxelsProps) {
   const grid = useEditor((s) => s.grid);
   const version = useEditor((s) => s.version);
   const mode = useEditor((s) => s.mode);
+  const colorFilter = useEditor((s) => s.colorFilter);
 
   const meshRef = useRef<THREE.InstancedMesh>(null);
 
-  // Rebuild dữ liệu instance mỗi khi grid đổi (theo version).
-  const data = useMemo(() => buildInstanceData(grid), [grid, version]);
+  // Rebuild dữ liệu instance mỗi khi grid đổi (theo version). Lọc theo màu nếu có.
+  const data = useMemo(() => {
+    const full = buildInstanceData(grid);
+    if (!colorFilter.length) return full;
+    const keep = new Set(colorFilter);
+    const positions: [number, number, number][] = [];
+    const cells: [number, number, number][] = [];
+    const colors: string[] = [];
+    for (let i = 0; i < full.count; i++) {
+      if (keep.has(full.colors[i])) {
+        positions.push(full.positions[i]);
+        cells.push(full.cells[i]);
+        colors.push(full.colors[i]);
+      }
+    }
+    return { count: positions.length, positions, cells, colors };
+  }, [grid, version, colorFilter]);
   const cellsRef = useRef(data.cells);
   cellsRef.current = data.cells;
 

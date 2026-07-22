@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { EditorScene } from './components/EditorScene';
 import { Toolbar } from './components/Toolbar';
 import { DragHint } from './components/DragHint';
+import { ColorLegend } from './components/ColorLegend';
 import { useEditor } from './store';
 
 export function App() {
@@ -40,6 +41,7 @@ export function App() {
     <>
       <Toolbar />
       <EditorScene />
+      <ColorLegend />
       <DragHint />
       <div className="hint">
         <b>Chuột trái</b>: đặt/kéo khối ngang, <b>+Ctrl</b>: nâng/hạ chiều cao &nbsp;•&nbsp;

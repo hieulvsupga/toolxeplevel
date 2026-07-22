@@ -33,6 +33,8 @@ Build/typecheck: `npm run build`
 - Undo/redo (Ctrl+Z / Ctrl+Y), Clear
 - Orbit camera, grid sàn
 - Export/Import JSON (`LevelData`)
+- **Bảng màu bên phải**: liệt kê màu đang dùng + số block mỗi màu; click để lọc chỉ hiện
+  block màu đó (chọn nhiều màu) — [ColorLegend.tsx](packages/editor/src/components/ColorLegend.tsx)
 
 ## Import ảnh → khối 3D
 
