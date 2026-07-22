@@ -63,8 +63,16 @@ export function CameraRig() {
       applyButtons();
     };
 
+    // Bỏ qua phím tắt khi người dùng đang gõ vào ô nhập liệu.
+    const isTyping = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return false;
+      const tag = t.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
+    };
+
     const onDown = (e: KeyboardEvent) => {
-      if (e.repeat) return;
+      if (e.repeat || isTyping(e)) return;
       const k = e.key;
       if (k === ' ' || k === 'Alt') {
         e.preventDefault();
@@ -82,6 +90,7 @@ export function CameraRig() {
       }
     };
     const onUp = (e: KeyboardEvent) => {
+      if (isTyping(e)) return;
       const k = e.key;
       if (k === ' ' || k === 'Alt') setFlag('rotate', false);
       else if (k === 'Shift') setFlag('pan', false);

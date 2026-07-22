@@ -34,9 +34,17 @@ Build/typecheck: `npm run build`
 - Orbit camera, grid sàn
 - Export/Import JSON (`LevelData`)
 
+## Import ảnh → khối 3D
+
+- Chọn ảnh pixel-art, tool tự dò lưới/bỏ nền, vẽ/xóa từng ô, chọn màu ảnh hoặc bảng màu
+- **Độ dày + dáng khối**: extrude theo trục Z với dáng Hộp / Kim tự tháp / Vòm / Bầu dục
+  (gọt đối xứng quanh cùng tâm nên mặt vát phẳng, không nhấp nhô) — xem
+  [imageVoxelizer.ts](packages/editor/src/lib/imageVoxelizer.ts)
+- **Định hình tầng** (thay cho độ dày): mỗi hàng dựng thành mặt cắt ngang Tròn / Vuông /
+  Tam giác lấy bề rộng hàng làm đường kính — biến ảnh phẳng thành khối tròn xoay 3D
+  (`crossSectionZ` trong imageVoxelizer.ts)
 ## Lộ trình tiếp theo
 
-- [ ] Import ảnh 2D → voxel (đọc pixel qua canvas)
 - [ ] Import model 3D → voxel (voxelization trong WebWorker)
 - [ ] AI gen hình (API hoặc procedural)
 - [ ] Tối ưu render lớn (greedy meshing), theo layer, symmetry mirror

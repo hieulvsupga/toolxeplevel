@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditor } from '../store';
 import {
+  crossSectionZ,
   detectGrid,
   hexToRgb,
+  LAYER_SHAPES,
   loadImageData,
   PROFILES,
   profileFactor,
@@ -12,6 +14,7 @@ import {
   snapToPalette,
   type DepthProfile,
   type GridInfo,
+  type LayerShape,
 } from '../lib/imageVoxelizer';
 
 interface ImportImagePanelProps {
@@ -47,6 +50,9 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
   const [thickness, setThickness] = useState(1);
   const [thicknessText, setThicknessText] = useState('1');
   const [profile, setProfile] = useState<DepthProfile>('box');
+
+  // Định hình tầng: mỗi hàng thành mặt cắt tròn/vuông/tam giác (bỏ qua độ dày khi bật).
+  const [layerShape, setLayerShape] = useState<LayerShape>('off');
 
   // Lưới màu GỐC (hex) đang chỉnh; null = ô trống. Màu hiển thị/tạo tuỳ colorMode.
   const [cells, setCells] = useState<(string | null)[]>([]);
@@ -112,16 +118,64 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
     return rowZLayers(thickness, profileFactor(profile, f));
   };
 
-  // Tổng số khối 3D sẽ tạo (ô đã tô × số lớp Z từng hàng).
-  const estBlocks = useMemo(() => {
-    if (rowStats.maxR < 0) return 0;
-    let total = 0;
-    for (let r = rowStats.minR; r <= rowStats.maxR; r++) {
-      total += rowStats.rowCount[r] * rowZs(r).length;
+  // Dựng danh sách khối 3D theo chế độ đang chọn.
+  const buildItems = (): { x: number; y: number; z: number; color: string }[] => {
+    const items: { x: number; y: number; z: number; color: string }[] = [];
+    if (!cells.length) return items;
+    const offX = Math.floor(cols / 2);
+
+    if (layerShape !== 'off') {
+      // Mỗi hàng -> mặt cắt ngang theo bề rộng hàng đó.
+      for (let r = 0; r < rows; r++) {
+        let xmin = cols;
+        let xmax = -1;
+        for (let c = 0; c < cols; c++) {
+          if (cells[r * cols + c]) {
+            if (c < xmin) xmin = c;
+            if (c > xmax) xmax = c;
+          }
+        }
+        if (xmax < 0) continue;
+        // Màu theo cột trong hàng, lấp khoảng trống bằng màu lân cận.
+        const rowCol = new Array<string | null>(cols).fill(null);
+        for (let c = xmin; c <= xmax; c++) rowCol[c] = displayColor(cells[r * cols + c]);
+        let last: string | null = null;
+        for (let c = xmin; c <= xmax; c++) (last = rowCol[c] ?? last), (rowCol[c] = last);
+        let next: string | null = null;
+        for (let c = xmax; c >= xmin; c--) (next = rowCol[c] ?? next), (rowCol[c] = next);
+
+        const W = xmax - xmin + 1;
+        const R = W / 2;
+        const xc = (xmin + xmax) / 2;
+        const y = rows - 1 - r;
+        for (let x = xmin; x <= xmax; x++) {
+          const col = rowCol[x];
+          if (!col) continue;
+          const zr = crossSectionZ(layerShape, x - xc, R);
+          if (!zr) continue;
+          for (let z = zr[0]; z <= zr[1]; z++) items.push({ x: x - offX, y, z, color: col });
+        }
+      }
+    } else {
+      // Chế độ độ dày + dáng khối.
+      for (let r = 0; r < rows; r++) {
+        const zs = rowZs(r);
+        for (let c = 0; c < cols; c++) {
+          const col = displayColor(cells[r * cols + c]);
+          if (!col) continue;
+          const y = rows - 1 - r;
+          for (const z of zs) items.push({ x: c - offX, y, z, color: col });
+        }
+      }
     }
-    return total;
+    return items;
+  };
+
+  const estBlocks = useMemo(
+    () => buildItems().length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowStats, thickness, profile]);
+    [rowStats, thickness, profile, layerShape, colorMode, palette, cells, cols, rows],
+  );
 
   const mirrorLeftToRight = () => {
     setCells((prev) => {
@@ -244,19 +298,8 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
   };
 
   const handleCreate = () => {
-    if (!cells.length) return;
-    const offX = Math.floor(cols / 2);
-    const items: { x: number; y: number; z: number; color: string }[] = [];
-    for (let r = 0; r < rows; r++) {
-      const zs = rowZs(r);
-      for (let c = 0; c < cols; c++) {
-        const col = displayColor(cells[r * cols + c]);
-        if (!col) continue;
-        const x = c - offX;
-        const y = rows - 1 - r;
-        for (const z of zs) items.push({ x, y, z, color: col });
-      }
-    }
+    const items = buildItems();
+    if (!items.length) return;
     stampVoxels(items);
     onClose();
   };
@@ -375,13 +418,15 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
               ⇋ Đối xứng
             </button>
 
-            {/* Độ dày theo trục Z */}
+            {/* Độ dày theo trục Z (tắt khi đang định hình tầng) */}
             <div className="import-ctrl">
               <label>Độ dày</label>
               <input
                 type="number"
                 min={1}
                 max={64}
+                disabled={layerShape !== 'off'}
+                title={layerShape !== 'off' ? 'Đang định hình tầng — độ dày bị tắt' : undefined}
                 value={thicknessText}
                 onChange={(e) => {
                   const t = e.target.value;
@@ -397,19 +442,46 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
               />
             </div>
 
-            {/* Dáng khối */}
+            {/* Dáng khối (theo chiều cao) */}
             <div className="seg">
               {PROFILES.map((p) => (
                 <button
                   key={p.id}
                   className={profile === p.id ? 'active' : ''}
                   onClick={() => setProfile(p.id)}
-                  disabled={thickness <= 1}
-                  title={thickness <= 1 ? 'Tăng độ dày > 1 để dùng dáng' : p.label}
+                  disabled={thickness <= 1 || layerShape !== 'off'}
+                  title={
+                    layerShape !== 'off'
+                      ? 'Đang định hình tầng'
+                      : thickness <= 1
+                        ? 'Tăng độ dày > 1 để dùng dáng'
+                        : p.label
+                  }
                 >
                   {p.label}
                 </button>
               ))}
+            </div>
+
+            {/* Định hình tầng (mặt cắt ngang) */}
+            <div className="import-ctrl">
+              <label>Tầng</label>
+              <div className="seg">
+                {LAYER_SHAPES.map((s) => (
+                  <button
+                    key={s.id}
+                    className={layerShape === s.id ? 'active' : ''}
+                    onClick={() => setLayerShape(s.id)}
+                    title={
+                      s.id === 'off'
+                        ? 'Tắt định hình tầng, dùng độ dày/dáng'
+                        : `Mỗi tầng thành mặt cắt ${s.label}`
+                    }
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <span className="modal-dim">≈ {estBlocks} khối</span>
@@ -447,7 +519,7 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
               onPointerUp={() => (paintingRef.current = false)}
               onPointerLeave={() => (paintingRef.current = false)}
             />
-            {thickness > 1 && (
+            {layerShape === 'off' && thickness > 1 && (
               <div className="side-preview">
                 <div className="side-preview-label">Mặt bên</div>
                 <canvas ref={sideRef} width={72} height={260} />
