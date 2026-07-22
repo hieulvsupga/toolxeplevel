@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditor } from '../store';
 import {
-  crossSectionZ,
+  crossSectionZRange,
   detectGrid,
   hexToRgb,
   LAYER_SHAPES,
@@ -24,6 +24,8 @@ interface ImportImagePanelProps {
 
 type ColorMode = 'original' | 'palette';
 type EditMode = 'paint' | 'erase';
+// Cách đổ màu khi định hình tầng.
+type LayerColorFill = 'image' | 'wrap';
 
 const rgbToHex = (c: [number, number, number]) =>
   '#' +
@@ -51,8 +53,10 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
   const [thicknessText, setThicknessText] = useState('1');
   const [profile, setProfile] = useState<DepthProfile>('box');
 
-  // Định hình tầng: mỗi hàng thành mặt cắt tròn/vuông/tam giác (bỏ qua độ dày khi bật).
+  // Định hình tầng: mỗi hàng thành mặt cắt tròn/vuông (bỏ qua độ dày khi bật).
   const [layerShape, setLayerShape] = useState<LayerShape>('off');
+  // Đổ màu: theo cột ảnh, hoặc bọc ảnh quanh 4 mặt (nhìn 4 hướng đều thấy ảnh).
+  const [layerColor, setLayerColor] = useState<LayerColorFill>('image');
 
   // Lưới màu GỐC (hex) đang chỉnh; null = ô trống. Màu hiển thị/tạo tuỳ colorMode.
   const [cells, setCells] = useState<(string | null)[]>([]);
@@ -145,15 +149,31 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
         for (let c = xmax; c >= xmin; c--) (next = rowCol[c] ?? next), (rowCol[c] = next);
 
         const W = xmax - xmin + 1;
-        const R = W / 2;
+        const zOff = Math.floor(W / 2); // canh Z giữa quanh 0 (đúng W ô)
         const xc = (xmin + xmax) / 2;
+        const zc = (W - 1) / 2 - zOff; // tâm hình học theo Z (khớp với X)
         const y = rows - 1 - r;
-        for (let x = xmin; x <= xmax; x++) {
-          const col = rowCol[x];
-          if (!col) continue;
-          const zr = crossSectionZ(layerShape, x - xc, R);
+        // Bọc ảnh 4 mặt: mặt trước/sau tô theo X, mặt trái/phải tô theo Z ->
+        // nhìn từ 4 hướng chính đều thấy ảnh gốc.
+        const wrapColor = (x: number, z: number): string | null => {
+          const dx = x - xc;
+          const dz = z - zc;
+          const off = Math.abs(dz) >= Math.abs(dx) ? dx : dz;
+          let sx = Math.round(xc + off);
+          if (sx > xmax) sx = xmax;
+          else if (sx < xmin) sx = xmin;
+          return rowCol[sx];
+        };
+        for (let ix = 0; ix < W; ix++) {
+          const x = xmin + ix;
+          const zr = crossSectionZRange(layerShape, ix, W);
           if (!zr) continue;
-          for (let z = zr[0]; z <= zr[1]; z++) items.push({ x: x - offX, y, z, color: col });
+          for (let iz = zr[0]; iz <= zr[1]; iz++) {
+            const z = iz - zOff;
+            const col = layerColor === 'wrap' ? wrapColor(x, z) : rowCol[x];
+            if (!col) continue;
+            items.push({ x: x - offX, y, z, color: col });
+          }
         }
       }
     } else {
@@ -174,7 +194,7 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
   const estBlocks = useMemo(
     () => buildItems().length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rowStats, thickness, profile, layerShape, colorMode, palette, cells, cols, rows],
+    [rowStats, thickness, profile, layerShape, layerColor, colorMode, palette, cells, cols, rows],
   );
 
   const mirrorLeftToRight = () => {
@@ -483,6 +503,29 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
                 ))}
               </div>
             </div>
+
+            {/* Cách đổ màu khi định hình tầng */}
+            {layerShape !== 'off' && (
+              <div className="import-ctrl">
+                <label>Màu tầng</label>
+                <div className="seg">
+                  <button
+                    className={layerColor === 'image' ? 'active' : ''}
+                    onClick={() => setLayerColor('image')}
+                    title="Đổ màu theo cột ảnh (mặc định)"
+                  >
+                    Theo ảnh
+                  </button>
+                  <button
+                    className={layerColor === 'wrap' ? 'active' : ''}
+                    onClick={() => setLayerColor('wrap')}
+                    title="Bọc ảnh quanh 4 mặt — nhìn từ 4 hướng chính đều thấy ảnh gốc"
+                  >
+                    ◎ Bọc 4 mặt
+                  </button>
+                </div>
+              </div>
+            )}
 
             <span className="modal-dim">≈ {estBlocks} khối</span>
           </>

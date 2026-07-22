@@ -270,38 +270,34 @@ export function rowZLayers(thickness: number, f: number): number[] {
 }
 
 /** Định hình mặt cắt ngang (X-Z) của mỗi tầng theo bề rộng tầng. */
-export type LayerShape = 'off' | 'circle' | 'square' | 'triangle';
+export type LayerShape = 'off' | 'circle' | 'square';
 
 export const LAYER_SHAPES: { id: LayerShape; label: string }[] = [
   { id: 'off', label: 'Tắt' },
   { id: 'circle', label: '⚪ Tròn' },
   { id: 'square', label: '⬛ Vuông' },
-  { id: 'triangle', label: '🔺 Tam giác' },
 ];
 
 /**
- * Khoảng Z [min,max] (số nguyên, bao gồm 2 đầu) của cột lệch `dx` so với tâm tầng,
- * trong mặt cắt ngang bán kính R. null = cột này rỗng (ngoài hình).
+ * Khoảng CHỈ SỐ Z [izLo, izHi] (0-based, bao gồm 2 đầu) của cột thứ `ix` trong
+ * mặt cắt ngang rộng `W` ô. Mặt cắt nằm gọn trong lưới W×W nên vuông đúng W×W,
+ * tròn có đường kính W. null = cột này rỗng (ngoài hình).
  */
-export function crossSectionZ(shape: LayerShape, dx: number, R: number): [number, number] | null {
-  if (R <= 0) return [0, 0];
+export function crossSectionZRange(shape: LayerShape, ix: number, W: number): [number, number] | null {
+  if (W <= 1) return [0, 0];
   switch (shape) {
-    case 'square': {
-      const h = Math.round(R);
-      return [-h, h];
-    }
+    case 'square':
+      return [0, W - 1];
     case 'circle': {
+      const cc = (W - 1) / 2; // tâm trong không gian chỉ số
+      const R = W / 2;
+      const dx = ix - cc;
       const inside = R * R - dx * dx;
       if (inside < 0) return null;
-      const h = Math.round(Math.sqrt(inside));
-      return [-h, h];
-    }
-    case 'triangle': {
-      // Đáy đầy độ sâu ở tâm, thu dần về mũi ở 2 mép (nhìn từ trên là tam giác).
-      const u = Math.min(1, Math.abs(dx) / R);
-      const zmin = -Math.round(R);
-      const zmax = Math.round(R * (1 - 2 * u));
-      return [zmin, Math.max(zmin, zmax)];
+      const h = Math.sqrt(inside);
+      const lo = Math.ceil(cc - h);
+      const hi = Math.floor(cc + h);
+      return lo > hi ? null : [lo, hi];
     }
     default:
       return [0, 0];

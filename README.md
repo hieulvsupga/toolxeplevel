@@ -40,9 +40,11 @@ Build/typecheck: `npm run build`
 - **Độ dày + dáng khối**: extrude theo trục Z với dáng Hộp / Kim tự tháp / Vòm / Bầu dục
   (gọt đối xứng quanh cùng tâm nên mặt vát phẳng, không nhấp nhô) — xem
   [imageVoxelizer.ts](packages/editor/src/lib/imageVoxelizer.ts)
-- **Định hình tầng** (thay cho độ dày): mỗi hàng dựng thành mặt cắt ngang Tròn / Vuông /
-  Tam giác lấy bề rộng hàng làm đường kính — biến ảnh phẳng thành khối tròn xoay 3D
-  (`crossSectionZ` trong imageVoxelizer.ts)
+- **Định hình tầng** (thay cho độ dày): mỗi hàng dựng thành mặt cắt ngang Tròn / Vuông
+  lấy bề rộng hàng làm đường kính — biến ảnh phẳng thành khối tròn xoay 3D
+  (`crossSectionZRange` trong imageVoxelizer.ts). Đổ màu: **Theo ảnh** (mặc định, tô
+  theo cột) hoặc **Bọc 4 mặt** (mặt trước/sau tô theo X, trái/phải theo Z → nhìn từ 4
+  hướng chính đều thấy ảnh gốc)
 ## Lộ trình tiếp theo
 
 - [ ] Import model 3D → voxel (voxelization trong WebWorker)
