@@ -5,8 +5,12 @@ import {
   detectGrid,
   hexToRgb,
   loadImageData,
+  PROFILES,
+  profileFactor,
+  rowZLayers,
   sampleGrid,
   snapToPalette,
+  type DepthProfile,
   type GridInfo,
 } from '../lib/imageVoxelizer';
 
@@ -39,13 +43,21 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
+  // Độ dày (số lớp Z) + dáng khối phân bố độ dày theo chiều cao.
+  const [thickness, setThickness] = useState(1);
+  const [thicknessText, setThicknessText] = useState('1');
+  const [profile, setProfile] = useState<DepthProfile>('box');
+
   // Lưới màu GỐC (hex) đang chỉnh; null = ô trống. Màu hiển thị/tạo tuỳ colorMode.
   const [cells, setCells] = useState<(string | null)[]>([]);
   const [colorMode, setColorMode] = useState<ColorMode>('palette');
   const [editMode, setEditMode] = useState<EditMode>('paint');
 
   const previewRef = useRef<HTMLCanvasElement>(null);
+  const sideRef = useRef<HTMLCanvasElement>(null);
   const paintingRef = useRef(false);
+
+  const clampThickness = (v: number) => Math.max(1, Math.min(64, Math.round(v) || 1));
 
   const pixelAspect = (gi: GridInfo) =>
     (gi.bbox.maxY - gi.bbox.minY + 1) / (gi.bbox.maxX - gi.bbox.minX + 1);
@@ -74,7 +86,42 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
     setCells(s.cells.map((c) => (c ? rgbToHex(c) : null)));
   }, [img, info, cols, rows]);
 
-  const filledCount = useMemo(() => cells.filter(Boolean).length, [cells]);
+  // Số ô đã tô mỗi hàng + phạm vi hàng có khối (để chuẩn hoá chiều cao cho dáng).
+  const rowStats = useMemo(() => {
+    const rowCount = new Array(rows).fill(0);
+    let minR = rows;
+    let maxR = -1;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (cells[r * cols + c]) {
+          rowCount[r]++;
+          if (r < minR) minR = r;
+          if (r > maxR) maxR = r;
+        }
+      }
+    }
+    return { rowCount, minR, maxR };
+  }, [cells, cols, rows]);
+
+  // Các lớp Z tại 1 hàng theo dáng đã chọn. r=maxR là chân, r=minR là đỉnh.
+  const rowZs = (r: number): number[] => {
+    const { minR, maxR } = rowStats;
+    if (maxR < 0) return [0];
+    const span = Math.max(1, maxR - minR);
+    const f = (maxR - r) / span; // 0 ở chân, 1 ở đỉnh
+    return rowZLayers(thickness, profileFactor(profile, f));
+  };
+
+  // Tổng số khối 3D sẽ tạo (ô đã tô × số lớp Z từng hàng).
+  const estBlocks = useMemo(() => {
+    if (rowStats.maxR < 0) return 0;
+    let total = 0;
+    for (let r = rowStats.minR; r <= rowStats.maxR; r++) {
+      total += rowStats.rowCount[r] * rowZs(r).length;
+    }
+    return total;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowStats, thickness, profile]);
 
   const mirrorLeftToRight = () => {
     setCells((prev) => {
@@ -119,6 +166,37 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
     ctx.stroke();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cells, cols, rows, colorMode, palette]);
+
+  // Vẽ preview mặt BÊN (nhìn ngang) để thấy dáng khối theo độ dày.
+  useEffect(() => {
+    const cv = sideRef.current;
+    if (!cv) return;
+    const ctx = cv.getContext('2d')!;
+    const w = cv.width;
+    const h = cv.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#191921';
+    ctx.fillRect(0, 0, w, h);
+    if (rowStats.maxR < 0) return;
+    const rowH = h / rows;
+    const maxT = Math.max(1, thickness);
+    const scale = w / (maxT + 1); // chừa lề
+    const cx = w / 2;
+    ctx.fillStyle = '#4b86c9';
+    for (let r = 0; r < rows; r++) {
+      if (!rowStats.rowCount[r]) continue;
+      const bw = rowZs(r).length * scale;
+      ctx.fillRect(cx - bw / 2, r * rowH, bw, Math.ceil(rowH));
+    }
+    // trục giữa (z=0)
+    ctx.strokeStyle = 'rgba(127,214,255,0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx, 0);
+    ctx.lineTo(cx, h);
+    ctx.stroke();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowStats, rows, thickness, profile]);
 
   const readFile = async (file: File | undefined) => {
     if (!file) return;
@@ -170,10 +248,13 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
     const offX = Math.floor(cols / 2);
     const items: { x: number; y: number; z: number; color: string }[] = [];
     for (let r = 0; r < rows; r++) {
+      const zs = rowZs(r);
       for (let c = 0; c < cols; c++) {
         const col = displayColor(cells[r * cols + c]);
         if (!col) continue;
-        items.push({ x: c - offX, y: rows - 1 - r, z: 0, color: col });
+        const x = c - offX;
+        const y = rows - 1 - r;
+        for (const z of zs) items.push({ x, y, z, color: col });
       }
     }
     stampVoxels(items);
@@ -293,7 +374,45 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
             <button className="create-btn" onClick={mirrorLeftToRight} title="Cân đối 2 bên">
               ⇋ Đối xứng
             </button>
-            <span className="modal-dim">≈ {filledCount} khối</span>
+
+            {/* Độ dày theo trục Z */}
+            <div className="import-ctrl">
+              <label>Độ dày</label>
+              <input
+                type="number"
+                min={1}
+                max={64}
+                value={thicknessText}
+                onChange={(e) => {
+                  const t = e.target.value;
+                  setThicknessText(t);
+                  const n = Number(t);
+                  if (t !== '' && Number.isFinite(n) && n >= 1) setThickness(Math.min(64, n));
+                }}
+                onBlur={() => {
+                  const n = clampThickness(Number(thicknessText));
+                  setThickness(n);
+                  setThicknessText(String(n));
+                }}
+              />
+            </div>
+
+            {/* Dáng khối */}
+            <div className="seg">
+              {PROFILES.map((p) => (
+                <button
+                  key={p.id}
+                  className={profile === p.id ? 'active' : ''}
+                  onClick={() => setProfile(p.id)}
+                  disabled={thickness <= 1}
+                  title={thickness <= 1 ? 'Tăng độ dày > 1 để dùng dáng' : p.label}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            <span className="modal-dim">≈ {estBlocks} khối</span>
           </>
         )}
 
@@ -303,7 +422,7 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
 
         {info && (
           <button className="primary create-btn" onClick={handleCreate}>
-            Tạo {filledCount} khối
+            Tạo {estBlocks} khối
           </button>
         )}
         <button className="create-btn" onClick={onClose}>
@@ -313,20 +432,28 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
 
       <div className="import-stage">
         {cells.length ? (
-          <canvas
-            ref={previewRef}
-            className="import-canvas"
-            onPointerDown={(e) => {
-              paintingRef.current = true;
-              previewRef.current?.setPointerCapture(e.pointerId);
-              applyEditAt(e);
-            }}
-            onPointerMove={(e) => {
-              if (paintingRef.current) applyEditAt(e);
-            }}
-            onPointerUp={() => (paintingRef.current = false)}
-            onPointerLeave={() => (paintingRef.current = false)}
-          />
+          <>
+            <canvas
+              ref={previewRef}
+              className="import-canvas"
+              onPointerDown={(e) => {
+                paintingRef.current = true;
+                previewRef.current?.setPointerCapture(e.pointerId);
+                applyEditAt(e);
+              }}
+              onPointerMove={(e) => {
+                if (paintingRef.current) applyEditAt(e);
+              }}
+              onPointerUp={() => (paintingRef.current = false)}
+              onPointerLeave={() => (paintingRef.current = false)}
+            />
+            {thickness > 1 && (
+              <div className="side-preview">
+                <div className="side-preview-label">Mặt bên</div>
+                <canvas ref={sideRef} width={72} height={260} />
+              </div>
+            )}
+          </>
         ) : (
           <label className="dropzone">
             <div className="dropzone-big">

@@ -215,6 +215,60 @@ export function sampleGrid(img: ImageData, info: GridInfo, cols: number, rows: n
   return { cols, rows, cells };
 }
 
+/** Dáng khối quyết định độ dày (theo trục Z) phân bố theo chiều cao. */
+export type DepthProfile = 'box' | 'pyramid' | 'dome' | 'ellipse';
+
+export const PROFILES: { id: DepthProfile; label: string }[] = [
+  { id: 'box', label: '⬛ Hộp' },
+  { id: 'pyramid', label: '🔺 Kim tự tháp' },
+  { id: 'dome', label: '⛰ Vòm' },
+  { id: 'ellipse', label: '🥚 Bầu dục' },
+];
+
+/**
+ * Hệ số độ dày [0..1] theo chiều cao chuẩn hoá f (0 = chân, 1 = đỉnh).
+ * Nhân với độ dày gốc để ra số lớp Z tại từng hàng.
+ */
+export function profileFactor(profile: DepthProfile, f: number): number {
+  const t = Math.min(1, Math.max(0, f));
+  switch (profile) {
+    case 'box':
+      return 1; // đều nhau
+    case 'pyramid':
+      return 1 - t; // thuôn tuyến tính về đỉnh
+    case 'dome':
+      return Math.sqrt(Math.max(0, 1 - t * t)); // cong tròn (1/4 đường tròn)
+    case 'ellipse': {
+      const u = 2 * t - 1; // -1..1
+      return Math.sqrt(Math.max(0, 1 - u * u)); // phình giữa, thon 2 đầu
+    }
+  }
+}
+
+/** Số lớp Z (độ dày t) canh giữa quanh z=0: vd t=6 -> [-3..2], t=1 -> [0]. */
+export function zLayers(t: number): number[] {
+  const zs: number[] = [];
+  const start = -Math.floor(t / 2);
+  for (let k = 0; k < t; k++) zs.push(start + k);
+  return zs;
+}
+
+/**
+ * Lớp Z tại 1 hàng: coi như khối hộp ĐẶC (độ dày `thickness`) rồi GỌT đối xứng
+ * quanh cùng một tâm theo hệ số f [0..1]. Nhờ dùng chung 1 tâm cho mọi hàng,
+ * hai mặt trước/sau luôn soi gương nhau và các bậc giảm đều (mặt vát chéo),
+ * không bị nhấp nhô như khi canh giữa từng hàng độc lập.
+ */
+export function rowZLayers(thickness: number, f: number): number[] {
+  const full = zLayers(thickness);
+  if (thickness <= 1) return full;
+  const c = (full[0] + full[full.length - 1]) / 2; // tâm chung (có thể .5)
+  const halfWidth = (thickness - 1) / 2;
+  const minDist = full.length % 2 === 0 ? 0.5 : 0; // luôn giữ ≥ lớp giữa
+  const allowed = Math.max(minDist, halfWidth * Math.min(1, Math.max(0, f)));
+  return full.filter((z) => Math.abs(z - c) <= allowed + 1e-6);
+}
+
 export function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '');
   return [
