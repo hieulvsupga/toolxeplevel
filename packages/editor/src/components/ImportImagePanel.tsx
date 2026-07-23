@@ -23,7 +23,7 @@ interface ImportImagePanelProps {
 }
 
 type ColorMode = 'original' | 'palette';
-type EditMode = 'paint' | 'erase';
+type EditMode = 'paint' | 'erase' | 'none';
 // Cách đổ màu khi định hình tầng.
 type LayerColorFill = 'image' | 'wrap';
 
@@ -61,7 +61,9 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
   // Lưới màu GỐC (hex) đang chỉnh; null = ô trống. Màu hiển thị/tạo tuỳ colorMode.
   const [cells, setCells] = useState<(string | null)[]>([]);
   const [colorMode, setColorMode] = useState<ColorMode>('palette');
-  const [editMode, setEditMode] = useState<EditMode>('paint');
+  const [editMode, setEditMode] = useState<EditMode>('none');
+  // Nền preview: tối (mặc định) hoặc sáng cho dễ nhìn ảnh tối.
+  const [lightBg, setLightBg] = useState(false);
 
   const previewRef = useRef<HTMLCanvasElement>(null);
   const sideRef = useRef<HTMLCanvasElement>(null);
@@ -227,7 +229,14 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
           ctx.fillStyle = col;
           ctx.fillRect(c * px, r * px, px, px);
         } else {
-          ctx.fillStyle = (r + c) % 2 ? '#20202a' : '#191921';
+          const dark = (r + c) % 2;
+          ctx.fillStyle = lightBg
+            ? dark
+              ? '#d8d8e0'
+              : '#eef0f4'
+            : dark
+              ? '#20202a'
+              : '#191921';
           ctx.fillRect(c * px, r * px, px, px);
         }
       }
@@ -239,7 +248,7 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
     ctx.lineTo((cols / 2) * px, cv.height);
     ctx.stroke();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cells, cols, rows, colorMode, palette]);
+  }, [cells, cols, rows, colorMode, palette, lightBg]);
 
   // Vẽ preview mặt BÊN (nhìn ngang) để thấy dáng khối theo độ dày.
   useEffect(() => {
@@ -306,6 +315,7 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
   };
 
   const applyEditAt = (e: React.PointerEvent) => {
+    if (editMode === 'none') return; // chế độ xem, không sửa
     const idx = cellIndexFromEvent(e);
     if (idx == null) return;
     setCells((prev) => {
@@ -313,6 +323,25 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
       if (prev[idx] === val) return prev;
       const next = [...prev];
       next[idx] = val;
+      return next;
+    });
+  };
+
+  // Dịch toàn bộ pixel theo hướng (dr theo hàng, dc theo cột); ô ra ngoài bị bỏ.
+  const shiftCells = (dr: number, dc: number) => {
+    setCells((prev) => {
+      if (!prev.length) return prev;
+      const next: (string | null)[] = new Array(rows * cols).fill(null);
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const v = prev[r * cols + c];
+          if (!v) continue;
+          const nr = r + dr;
+          const nc = c + dc;
+          if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+          next[nr * cols + nc] = v;
+        }
+      }
       return next;
     });
   };
@@ -345,12 +374,15 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
 
         {info && (
           <>
-            <div className="import-ctrl">
-              <label>Rộng</label>
+            {/* Kích thước lưới */}
+            <div className="tb-group">
+              <span className="tb-glabel">Lưới</span>
               <input
+                className="num"
                 type="number"
                 min={1}
                 max={200}
+                title="Số ô ngang"
                 value={colsText}
                 onChange={(e) => {
                   const t = e.target.value;
@@ -369,11 +401,13 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
                   setDims(n, clampDim(n * pixelAspect(info)));
                 }}
               />
-              <label>Cao</label>
+              <span className="tb-x">×</span>
               <input
+                className="num"
                 type="number"
                 min={1}
                 max={200}
+                title="Số ô dọc"
                 value={rowsText}
                 onChange={(e) => {
                   const t = e.target.value;
@@ -384,69 +418,80 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
                 onBlur={() => setDims(cols, clampDim(Number(rowsText)))}
               />
               <button className="link-btn" onClick={() => setDims(info.cols, info.rows)}>
-                dò: {info.cols}×{info.rows}
+                dò {info.cols}×{info.rows}
               </button>
             </div>
 
-            {/* Switch chế độ màu */}
-            <div className="seg">
-              <button
-                className={colorMode === 'original' ? 'active' : ''}
-                onClick={() => setColorMode('original')}
-              >
-                Màu ảnh
-              </button>
-              <button
-                className={colorMode === 'palette' ? 'active' : ''}
-                onClick={() => setColorMode('palette')}
-              >
-                Bảng màu
-              </button>
-            </div>
-
-            {/* Công cụ sửa ô */}
-            <div className="seg">
-              <button
-                className={editMode === 'paint' ? 'active' : ''}
-                onClick={() => setEditMode('paint')}
-              >
-                ✏️ Vẽ
-              </button>
-              <button
-                className={editMode === 'erase' ? 'active' : ''}
-                onClick={() => setEditMode('erase')}
-              >
-                🧹 Xóa
-              </button>
-            </div>
-
-            {editMode === 'paint' && (
-              <div className="swatches">
-                {palette.map((c, i) => (
-                  <button
-                    key={i}
-                    className={`swatch${c === color ? ' active' : ''}`}
-                    style={{ background: c }}
-                    title={c}
-                    onClick={() => setColor(c)}
-                  />
-                ))}
+            {/* Chỉnh ô: chế độ + màu nguồn + đối xứng */}
+            <div className="tb-group">
+              <span className="tb-glabel">Chỉnh</span>
+              <div className="seg">
+                <button
+                  className={editMode === 'none' ? 'active' : ''}
+                  onClick={() => setEditMode('none')}
+                  title="Không vẽ/xóa — chỉ xem"
+                >
+                  🚫
+                </button>
+                <button
+                  className={editMode === 'paint' ? 'active' : ''}
+                  onClick={() => setEditMode('paint')}
+                  title="Vẽ ô"
+                >
+                  ✏️ Vẽ
+                </button>
+                <button
+                  className={editMode === 'erase' ? 'active' : ''}
+                  onClick={() => setEditMode('erase')}
+                  title="Xóa ô"
+                >
+                  🧹 Xóa
+                </button>
               </div>
-            )}
+              <div className="seg">
+                <button
+                  className={colorMode === 'original' ? 'active' : ''}
+                  onClick={() => setColorMode('original')}
+                  title="Dùng màu gốc của ảnh"
+                >
+                  Màu ảnh
+                </button>
+                <button
+                  className={colorMode === 'palette' ? 'active' : ''}
+                  onClick={() => setColorMode('palette')}
+                  title="Snap về bảng màu"
+                >
+                  Bảng màu
+                </button>
+              </div>
+              <button className="create-btn" onClick={mirrorLeftToRight} title="Cân đối 2 bên">
+                ⇋
+              </button>
+              {editMode === 'paint' && (
+                <div className="swatches">
+                  {palette.map((c, i) => (
+                    <button
+                      key={i}
+                      className={`swatch${c === color ? ' active' : ''}`}
+                      style={{ background: c }}
+                      title={c}
+                      onClick={() => setColor(c)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
 
-            <button className="create-btn" onClick={mirrorLeftToRight} title="Cân đối 2 bên">
-              ⇋ Đối xứng
-            </button>
-
-            {/* Độ dày theo trục Z (tắt khi đang định hình tầng) */}
-            <div className="import-ctrl">
-              <label>Độ dày</label>
+            {/* Dựng khối 3D: độ dày + dáng (mờ khi định hình tầng) */}
+            <div className={`tb-group${layerShape !== 'off' ? ' tb-off' : ''}`}>
+              <span className="tb-glabel">Dày</span>
               <input
+                className="num"
                 type="number"
                 min={1}
                 max={64}
                 disabled={layerShape !== 'off'}
-                title={layerShape !== 'off' ? 'Đang định hình tầng — độ dày bị tắt' : undefined}
+                title={layerShape !== 'off' ? 'Đang định hình tầng — độ dày bị tắt' : 'Số lớp Z'}
                 value={thicknessText}
                 onChange={(e) => {
                   const t = e.target.value;
@@ -460,32 +505,30 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
                   setThicknessText(String(n));
                 }}
               />
+              <div className="seg">
+                {PROFILES.map((p) => (
+                  <button
+                    key={p.id}
+                    className={profile === p.id ? 'active' : ''}
+                    onClick={() => setProfile(p.id)}
+                    disabled={thickness <= 1 || layerShape !== 'off'}
+                    title={
+                      layerShape !== 'off'
+                        ? 'Đang định hình tầng'
+                        : thickness <= 1
+                          ? 'Tăng độ dày > 1 để dùng dáng'
+                          : p.label
+                    }
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Dáng khối (theo chiều cao) */}
-            <div className="seg">
-              {PROFILES.map((p) => (
-                <button
-                  key={p.id}
-                  className={profile === p.id ? 'active' : ''}
-                  onClick={() => setProfile(p.id)}
-                  disabled={thickness <= 1 || layerShape !== 'off'}
-                  title={
-                    layerShape !== 'off'
-                      ? 'Đang định hình tầng'
-                      : thickness <= 1
-                        ? 'Tăng độ dày > 1 để dùng dáng'
-                        : p.label
-                  }
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Định hình tầng (mặt cắt ngang) */}
-            <div className="import-ctrl">
-              <label>Tầng</label>
+            {/* Định hình tầng (mặt cắt ngang) + màu tầng */}
+            <div className="tb-group">
+              <span className="tb-glabel">Tầng</span>
               <div className="seg">
                 {LAYER_SHAPES.map((s) => (
                   <button
@@ -502,12 +545,7 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
                   </button>
                 ))}
               </div>
-            </div>
-
-            {/* Cách đổ màu khi định hình tầng */}
-            {layerShape !== 'off' && (
-              <div className="import-ctrl">
-                <label>Màu tầng</label>
+              {layerShape !== 'off' && (
                 <div className="seg">
                   <button
                     className={layerColor === 'image' ? 'active' : ''}
@@ -519,13 +557,13 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
                   <button
                     className={layerColor === 'wrap' ? 'active' : ''}
                     onClick={() => setLayerColor('wrap')}
-                    title="Bọc ảnh quanh 4 mặt — nhìn từ 4 hướng chính đều thấy ảnh gốc"
+                    title="Bọc ảnh quanh 4 mặt — nhìn 4 hướng chính đều thấy ảnh"
                   >
                     ◎ Bọc 4 mặt
                   </button>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             <span className="modal-dim">≈ {estBlocks} khối</span>
           </>
@@ -545,12 +583,30 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
         </button>
       </div>
 
-      <div className="import-stage">
+      <div className={`import-stage${lightBg ? ' light' : ''}`}>
+        <button
+          className="bg-toggle"
+          onClick={() => setLightBg((v) => !v)}
+          title={lightBg ? 'Chuyển nền tối' : 'Chuyển nền sáng'}
+        >
+          {lightBg ? '🌙' : '☀️'}
+        </button>
+        {cells.length > 0 && (
+          <div className="shift-pad" title="Dịch chuyển toàn bộ pixel">
+            <button onClick={() => shiftCells(-1, 0)} title="Lên">▲</button>
+            <div className="shift-mid">
+              <button onClick={() => shiftCells(0, -1)} title="Trái">◀</button>
+              <button onClick={() => shiftCells(0, 1)} title="Phải">▶</button>
+            </div>
+            <button onClick={() => shiftCells(1, 0)} title="Xuống">▼</button>
+          </div>
+        )}
         {cells.length ? (
           <>
             <canvas
               ref={previewRef}
               className="import-canvas"
+              style={{ cursor: editMode === 'none' ? 'default' : 'crosshair' }}
               onPointerDown={(e) => {
                 paintingRef.current = true;
                 previewRef.current?.setPointerCapture(e.pointerId);

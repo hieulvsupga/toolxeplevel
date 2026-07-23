@@ -69,7 +69,8 @@ export function Toolbar() {
 
   return (
     <div className="toolbar">
-      <div className="palette-area" ref={palAreaRef}>
+      {/* Màu */}
+      <div className="tb-group palette-area" ref={palAreaRef}>
         <div className="swatches">
           {palette.map((c, i) => (
             <button
@@ -82,80 +83,98 @@ export function Toolbar() {
           ))}
         </div>
         <button
-          className={palOpen ? 'active' : ''}
+          className={`tb-icon${palOpen ? ' active' : ''}`}
           onClick={() => setPalOpen((o) => !o)}
           title="Quản lý bảng màu (thêm/sửa/xóa)"
         >
-          ⚙ Màu
+          ⚙
         </button>
         {palOpen && <PalettePanel />}
       </div>
-      <div className="sep" />
-      <button
-        className={mode === 'place' ? 'active' : ''}
-        onClick={() => setMode('place')}
-        title="Đặt khối (B)"
-      >
-        ➕ Đặt
-      </button>
-      <button
-        className={mode === 'remove' ? 'active' : ''}
-        onClick={() => setMode('remove')}
-        title="Xóa khối (E)"
-      >
-        ➖ Xóa
-      </button>
-      <button
-        className={mode === 'paint' ? 'active' : ''}
-        onClick={() => setMode('paint')}
-        title="Sơn lại màu khối có sẵn (P)"
-      >
-        🖌 Sơn
-      </button>
-      <div className="sep" />
-      <button
-        className={mirrorX ? 'active' : ''}
-        onClick={() => toggleMirror('x')}
-        title="Đối xứng qua mặt X"
-      >
-        ⇋ X
-      </button>
-      <button
-        className={mirrorZ ? 'active' : ''}
-        onClick={() => toggleMirror('z')}
-        title="Đối xứng qua mặt Z"
-      >
-        ⇋ Z
-      </button>
-      <div className="sep" />
-      <button onClick={undo} disabled={!canUndo} title="Hoàn tác (Ctrl+Z)">
-        ↶ Undo
-      </button>
-      <button onClick={redo} disabled={!canRedo} title="Làm lại (Ctrl+Y)">
-        ↷ Redo
-      </button>
-      <div className="sep" />
-      <button onClick={handleExport} title="Xuất level ra JSON">
-        ⬇ Export
-      </button>
-      <button onClick={() => fileRef.current?.click()} title="Nhập level từ JSON">
-        ⬆ Import
-      </button>
-      <button
-        onClick={() => imgFileRef.current?.click()}
-        title="Tạo khối từ ảnh 2D (mở hộp chọn ảnh)"
-      >
-        🖼 Ảnh
-      </button>
-      <button
-        onClick={() => modelFileRef.current?.click()}
-        title="Tạo khối từ model 3D (.fbx .glb .gltf .obj .stl)"
-      >
-        🧊 Model
-      </button>
-      <button onClick={() => count && confirm('Xóa toàn bộ level?') && clear()}>
-        🗑 Clear
-      </button>
+
+      {/* Công cụ (chọn 1) */}
+      <div className="tb-group tb-seg">
+        <button
+          className={mode === 'place' ? 'active' : ''}
+          onClick={() => setMode('place')}
+          title="Đặt khối (B)"
+        >
+          ➕ Đặt
+        </button>
+        <button
+          className={mode === 'remove' ? 'active' : ''}
+          onClick={() => setMode('remove')}
+          title="Xóa khối (E)"
+        >
+          ➖ Xóa
+        </button>
+        <button
+          className={mode === 'paint' ? 'active' : ''}
+          onClick={() => setMode('paint')}
+          title="Sơn lại màu khối có sẵn (P)"
+        >
+          🖌 Sơn
+        </button>
+      </div>
+
+      {/* Đối xứng */}
+      <div className="tb-group">
+        <button
+          className={`tb-icon${mirrorX ? ' active' : ''}`}
+          onClick={() => toggleMirror('x')}
+          title="Đối xứng qua mặt X"
+        >
+          ⇋X
+        </button>
+        <button
+          className={`tb-icon${mirrorZ ? ' active' : ''}`}
+          onClick={() => toggleMirror('z')}
+          title="Đối xứng qua mặt Z"
+        >
+          ⇋Z
+        </button>
+      </div>
+
+      {/* Lịch sử */}
+      <div className="tb-group">
+        <button className="tb-icon" onClick={undo} disabled={!canUndo} title="Hoàn tác (Ctrl+Z)">
+          ↶
+        </button>
+        <button className="tb-icon" onClick={redo} disabled={!canRedo} title="Làm lại (Ctrl+Y)">
+          ↷
+        </button>
+      </div>
+
+      {/* Tạo khối từ */}
+      <div className="tb-group">
+        <button onClick={() => imgFileRef.current?.click()} title="Tạo khối từ ảnh 2D">
+          🖼 Ảnh
+        </button>
+        <button
+          onClick={() => modelFileRef.current?.click()}
+          title="Tạo khối từ model 3D (.fbx .glb .gltf .obj .stl)"
+        >
+          🧊 Model
+        </button>
+      </div>
+
+      {/* File */}
+      <div className="tb-group">
+        <button className="tb-icon" onClick={() => fileRef.current?.click()} title="Nhập level từ JSON">
+          ⬆
+        </button>
+        <button className="tb-icon" onClick={handleExport} title="Xuất level ra JSON">
+          ⬇
+        </button>
+        <button
+          className="tb-icon tb-danger"
+          onClick={() => count && confirm('Xóa toàn bộ level?') && clear()}
+          title="Xóa toàn bộ level"
+        >
+          🗑
+        </button>
+      </div>
+
       <span className="count">{count} khối</span>
       <input
         ref={imgFileRef}

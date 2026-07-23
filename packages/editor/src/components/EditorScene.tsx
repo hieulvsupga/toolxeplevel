@@ -8,7 +8,6 @@ import { HoverPreview } from './HoverPreview';
 import { RegionPreview } from './RegionPreview';
 import { DragFill } from './DragFill';
 import { CameraRig } from './CameraRig';
-import { Hud } from './Hud';
 
 export function EditorScene() {
   const [hover, setHover] = useState<Cell | null>(null);
@@ -54,7 +53,6 @@ export function EditorScene() {
         </GizmoHelper>
         <OrbitControls makeDefault enableDamping dampingFactor={0.1} />
       </Canvas>
-      <Hud hover={hover} />
     </div>
   );
 }

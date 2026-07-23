@@ -89,6 +89,8 @@ function ModelPreview({ items }: { items: VoxelItem[] }) {
 
 export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps) {
   const color = useEditor((s) => s.color);
+  const setColor = useEditor((s) => s.setColor);
+  const palette = useEditor((s) => s.palette);
   const stampVoxels = useEditor((s) => s.stampVoxels);
 
   const [tri, setTri] = useState<TriData | null>(null);
@@ -201,12 +203,15 @@ export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps
 
         {tri && dims && (
           <>
-            <div className="import-ctrl">
-              <label>Độ phân giải</label>
+            {/* Độ phân giải */}
+            <div className="tb-group">
+              <span className="tb-glabel">Độ phân giải</span>
               <input
+                className="num"
                 type="number"
                 min={4}
                 max={96}
+                title="Số ô theo cạnh dài nhất"
                 value={resText}
                 onChange={(e) => {
                   const t = e.target.value;
@@ -220,60 +225,86 @@ export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps
                   setResText(String(n));
                 }}
               />
+              <span className="tb-x">
+                {dims.nx}×{dims.ny}×{dims.nz}
+              </span>
             </div>
 
-            <div className="seg">
-              <button
-                className={colorMode === 'model' ? 'active' : ''}
-                onClick={() => setColorMode('model')}
-                title="Lấy màu vật liệu của model"
-              >
-                Màu model
-              </button>
-              <button
-                className={colorMode === 'texture' ? 'active' : ''}
-                onClick={() => texData && setColorMode('texture')}
-                disabled={!texData || !tri.hasUV}
-                title={
-                  !tri.hasUV
-                    ? 'Model không có UV nên không map được texture'
-                    : !texData
-                      ? 'Chọn ảnh texture trước'
-                      : 'Lấy màu từ texture theo UV'
-                }
-              >
-                Texture
-              </button>
-              <button
-                className={colorMode === 'single' ? 'active' : ''}
-                onClick={() => setColorMode('single')}
-                title="Dùng màu đang chọn cho tất cả khối"
-              >
-                <span
-                  style={{ background: color, display: 'inline-block', width: 12, height: 12, verticalAlign: 'middle' }}
-                />{' '}
-                1 màu
-              </button>
-            </div>
+            {/* Màu */}
+            <div className="tb-group">
+              <span className="tb-glabel">Màu</span>
+              <div className="seg">
+                <button
+                  className={colorMode === 'model' ? 'active' : ''}
+                  onClick={() => setColorMode('model')}
+                  title="Lấy màu vật liệu của model"
+                >
+                  Màu model
+                </button>
+                {texData && (
+                  <button
+                    className={colorMode === 'texture' ? 'active' : ''}
+                    onClick={() => setColorMode('texture')}
+                    title="Lấy màu từ texture theo UV"
+                  >
+                    🖼 Texture
+                  </button>
+                )}
+                <button
+                  className={colorMode === 'single' ? 'active' : ''}
+                  onClick={() => setColorMode('single')}
+                  title="Dùng 1 màu cho tất cả khối"
+                >
+                  <span
+                    style={{ background: color, display: 'inline-block', width: 12, height: 12, borderRadius: 3, verticalAlign: 'middle' }}
+                  />{' '}
+                  1 màu
+                </button>
+              </div>
 
-            <label className="file-btn">
-              {texName ? '🖼 Texture khác' : '🖼 Chọn texture…'}
-              <input
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = '';
-                  readTexture(f);
-                }}
-              />
-            </label>
+              {tri.hasUV ? (
+                <label className="file-btn small">
+                  {texName ? '🖼 Đổi texture' : '🖼 + Texture'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = '';
+                      readTexture(f);
+                    }}
+                  />
+                </label>
+              ) : (
+                <span className="tb-glabel" title="Model không có UV nên không map được texture">
+                  không có UV
+                </span>
+              )}
+
+              {colorMode === 'single' && (
+                <div className="swatches">
+                  {palette.map((c, i) => (
+                    <button
+                      key={i}
+                      className={`swatch${c === color ? ' active' : ''}`}
+                      style={{ background: c }}
+                      title={c}
+                      onClick={() => setColor(c)}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    title="Chọn màu tuỳ ý"
+                  />
+                </div>
+              )}
+            </div>
 
             <span className="modal-dim">
-              lưới {dims.nx}×{dims.ny}×{dims.nz}
-              {computing ? ' · đang tính…' : ` · ${preview.length} khối`}
-              {tri.hasUV ? '' : ' · (không UV)'}
+              {computing ? 'đang tính…' : `≈ ${preview.length} khối`}
             </span>
           </>
         )}
