@@ -84,6 +84,10 @@ interface EditorState {
   fill: (cells: Cell[], voxel: Voxel | null) => void;
   /** Sơn lại màu các ô ĐÃ CÓ khối trong danh sách (không thêm/xóa). */
   paint: (cells: Cell[], color: string) => void;
+  /** Như paint nhưng KHÔNG áp đối xứng — dùng cho tô màu theo tầng. */
+  recolorCells: (cells: Cell[], color: string) => void;
+  /** Xóa các ô (không mirror), gộp 1 undo — dùng cho tô màu theo tầng. */
+  deleteCells: (cells: Cell[]) => void;
   place: (x: number, y: number, z: number) => void;
   remove: (x: number, y: number, z: number) => void;
   /** Dán một loạt voxel nhiều màu (dùng cho import ảnh) — gộp 1 undo. */
@@ -196,6 +200,33 @@ export const useEditor = create<EditorState>((set, get) => ({
       undoStack: [...undoStack, changes],
       redoStack: [],
     });
+  },
+
+  recolorCells: (cells, color) => {
+    const { grid, undoStack } = get();
+    const changes: Batch = [];
+    for (const [x, y, z] of cells) {
+      const before = grid.get(x, y, z);
+      if (!before || before.color === color) continue;
+      const after: Voxel = { ...before, color };
+      grid.set(x, y, z, after);
+      changes.push({ x, y, z, before, after });
+    }
+    if (!changes.length) return;
+    set({ version: get().version + 1, undoStack: [...undoStack, changes], redoStack: [] });
+  },
+
+  deleteCells: (cells) => {
+    const { grid, undoStack } = get();
+    const changes: Batch = [];
+    for (const [x, y, z] of cells) {
+      const before = grid.get(x, y, z);
+      if (!before) continue;
+      grid.delete(x, y, z);
+      changes.push({ x, y, z, before, after: undefined });
+    }
+    if (!changes.length) return;
+    set({ version: get().version + 1, undoStack: [...undoStack, changes], redoStack: [] });
   },
 
   place: (x, y, z) => get().fill([[x, y, z]], { color: get().color }),

@@ -3,6 +3,7 @@ import { useEditor } from '../store';
 import { PalettePanel } from './PalettePanel';
 import { ImportImagePanel } from './ImportImagePanel';
 import { ImportModelPanel } from './ImportModelPanel';
+import { LayerPaintPanel } from './LayerPaintPanel';
 
 export function Toolbar() {
   const color = useEditor((s) => s.color);
@@ -29,6 +30,7 @@ export function Toolbar() {
   const [palOpen, setPalOpen] = useState(false);
   const [imgFile, setImgFile] = useState<File | null>(null);
   const [modelFile, setModelFile] = useState<File | null>(null);
+  const [layerOpen, setLayerOpen] = useState(false);
 
   // Click ra ngoài vùng bảng màu -> đóng popup.
   useEffect(() => {
@@ -158,6 +160,13 @@ export function Toolbar() {
         </button>
       </div>
 
+      {/* Tô màu theo tầng */}
+      <div className="tb-group">
+        <button onClick={() => count && setLayerOpen(true)} disabled={!count} title="Tô màu theo từng tầng (lưới 2D + xem 3D)">
+          🎨 Tô tầng
+        </button>
+      </div>
+
       {/* File */}
       <div className="tb-group">
         <button className="tb-icon" onClick={() => fileRef.current?.click()} title="Nhập level từ JSON">
@@ -204,6 +213,7 @@ export function Toolbar() {
       {modelFile && (
         <ImportModelPanel initialFile={modelFile} onClose={() => setModelFile(null)} />
       )}
+      {layerOpen && <LayerPaintPanel onClose={() => setLayerOpen(false)} />}
       <input
         ref={fileRef}
         type="file"
