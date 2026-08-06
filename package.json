@@ -12,5 +12,8 @@
   },
   "dependencies": {
     "voxel-level-tool": "file:"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
   }
 }

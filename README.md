@@ -26,6 +26,19 @@ npm run dev        # mở http://localhost:5173
 
 Build/typecheck: `npm run build`
 
+### Đóng gói app desktop (.exe) cho người khác dùng
+
+```bash
+npm run pack -w @voxel/editor
+```
+
+Tạo thư mục `packages/editor/release/Voxel Level Tool/` chứa **Voxel Level Tool.exe**
+(kèm runtime Electron + bản build). Nén cả thư mục đó gửi cho người khác — họ giải nén
+và double-click file `.exe`, không cần cài Node hay gì cả.
+
+Chạy thử bản desktop tại máy dev (không đóng gói): `npm run app -w @voxel/editor`.
+Việc này KHÔNG ảnh hưởng `npm run dev` — vẫn test qua localhost như thường.
+
 ## MVP hiện có (xếp tay + snapping)
 
 - Đặt/xóa khối bằng chuột, snap vào lưới, đặt áp mặt (kiểu Minecraft)
