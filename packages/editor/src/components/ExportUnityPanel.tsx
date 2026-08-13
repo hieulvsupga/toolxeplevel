@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   WALL_COLOR_ID,
   buildLayers,
@@ -99,7 +100,10 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
       }`
     : '—';
 
-  return (
+  // Portal thẳng ra body: panel này được render bên trong <Toolbar>, mà .toolbar có
+  // backdrop-filter — thứ đó tạo containing block mới cho position:fixed, nên `inset: 0` của lớp
+  // nền sẽ bám vào khung toolbar thay vì viewport và popup bị kéo lệch lên trên.
+  return createPortal(
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal ex-modal">
         <div className="ex-head">
@@ -255,9 +259,10 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
         </div>
 
         <button className="ex-go" onClick={handleExport} disabled={!built.voxelCount}>
-          ⬇ Xuất {meta.name || 'Level'}.asset
+          Xuất {meta.name || 'Level'}.asset
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
