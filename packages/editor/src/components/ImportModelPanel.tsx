@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { useEditor } from '../store';
+import { yUpToEditorAll } from '../lib/axis';
 import {
   extractTriangles,
   gridDims,
@@ -76,11 +77,14 @@ function PreviewMesh({ items }: { items: VoxelItem[] }) {
 
 function ModelPreview({ items }: { items: VoxelItem[] }) {
   return (
-    <Canvas camera={{ position: [14, 12, 16], fov: 45 }} style={{ width: '100%', height: '100%' }}>
+    <Canvas
+      camera={{ position: [16, -16, 13], fov: 45, up: [0, 0, 1] }}
+      style={{ width: '100%', height: '100%' }}
+    >
       <color attach="background" args={['#15151a']} />
       <ambientLight intensity={0.75} />
-      <directionalLight position={[10, 20, 12]} intensity={1.2} />
-      <directionalLight position={[-10, 5, -8]} intensity={0.4} />
+      <directionalLight position={[10, 12, 20]} intensity={1.2} />
+      <directionalLight position={[-10, -8, 5]} intensity={0.4} />
       <PreviewMesh items={items} />
       <OrbitControls makeDefault enableDamping dampingFactor={0.1} target={[0, 0, 0]} />
     </Canvas>
@@ -148,7 +152,8 @@ export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps
           : {};
     const timer = setTimeout(() => {
       try {
-        setPreview(voxelize(tri, resolution, opts));
+        // Quy về hệ trục editor ngay tại đây, để phần xem trước hiện đúng thứ sẽ được tạo ra.
+        setPreview(yUpToEditorAll(voxelize(tri, resolution, opts)));
         setErr('');
       } catch (e) {
         setErr((e as Error).message);

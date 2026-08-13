@@ -4,6 +4,7 @@ import { PalettePanel } from './PalettePanel';
 import { ImportImagePanel } from './ImportImagePanel';
 import { ImportModelPanel } from './ImportModelPanel';
 import { LayerPaintPanel } from './LayerPaintPanel';
+import { ExportUnityPanel } from './ExportUnityPanel';
 
 export function Toolbar() {
   const color = useEditor((s) => s.color);
@@ -12,7 +13,7 @@ export function Toolbar() {
   const mode = useEditor((s) => s.mode);
   const setMode = useEditor((s) => s.setMode);
   const mirrorX = useEditor((s) => s.mirrorX);
-  const mirrorZ = useEditor((s) => s.mirrorZ);
+  const mirrorY = useEditor((s) => s.mirrorY);
   const toggleMirror = useEditor((s) => s.toggleMirror);
   const undo = useEditor((s) => s.undo);
   const redo = useEditor((s) => s.redo);
@@ -20,8 +21,7 @@ export function Toolbar() {
   const canUndo = useEditor((s) => s.undoStack.length > 0);
   const canRedo = useEditor((s) => s.redoStack.length > 0);
   const count = useEditor((s) => s.grid.size);
-  const exportJSON = useEditor((s) => s.exportJSON);
-  const importJSON = useEditor((s) => s.importJSON);
+  const importUnityAsset = useEditor((s) => s.importUnityAsset);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const imgFileRef = useRef<HTMLInputElement>(null);
@@ -31,6 +31,7 @@ export function Toolbar() {
   const [imgFile, setImgFile] = useState<File | null>(null);
   const [modelFile, setModelFile] = useState<File | null>(null);
   const [layerOpen, setLayerOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   // Click ra ngoài vùng bảng màu -> đóng popup.
   useEffect(() => {
@@ -44,29 +45,21 @@ export function Toolbar() {
     return () => window.removeEventListener('pointerdown', onDown);
   }, [palOpen]);
 
-  const handleExport = () => {
-    const blob = new Blob([exportJSON()], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'level.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
+    if (count && !confirm(`Nhập "${file.name}" sẽ thay toàn bộ level đang mở. Tiếp tục?`)) return;
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        importJSON(String(reader.result));
+        const warnings = importUnityAsset(String(reader.result));
+        if (warnings.length) alert(`Đã nhập ${file.name}, có lưu ý:\n\n• ${warnings.join('\n• ')}`);
       } catch (err) {
-        alert('File level không hợp lệ: ' + (err as Error).message);
+        alert('Không đọc được file .asset: ' + (err as Error).message);
       }
     };
     reader.readAsText(file);
-    e.target.value = '';
   };
 
   return (
@@ -129,11 +122,11 @@ export function Toolbar() {
           ⇋X
         </button>
         <button
-          className={`tb-icon${mirrorZ ? ' active' : ''}`}
-          onClick={() => toggleMirror('z')}
-          title="Đối xứng qua mặt Z"
+          className={`tb-icon${mirrorY ? ' active' : ''}`}
+          onClick={() => toggleMirror('y')}
+          title="Đối xứng qua mặt Y"
         >
-          ⇋Z
+          ⇋Y
         </button>
       </div>
 
@@ -169,11 +162,18 @@ export function Toolbar() {
 
       {/* File */}
       <div className="tb-group">
-        <button className="tb-icon" onClick={() => fileRef.current?.click()} title="Nhập level từ JSON">
-          ⬆
+        <button
+          onClick={() => fileRef.current?.click()}
+          title="Mở file LevelData (.asset) của Unity vào tool"
+        >
+          Nhập .asset
         </button>
-        <button className="tb-icon" onClick={handleExport} title="Xuất level ra JSON">
-          ⬇
+        <button
+          onClick={() => count && setExportOpen(true)}
+          disabled={!count}
+          title="Ghi level hiện tại ra file LevelData (.asset) cho Unity"
+        >
+          Xuất .asset
         </button>
         <button
           className="tb-icon tb-danger"
@@ -214,10 +214,11 @@ export function Toolbar() {
         <ImportModelPanel initialFile={modelFile} onClose={() => setModelFile(null)} />
       )}
       {layerOpen && <LayerPaintPanel onClose={() => setLayerOpen(false)} />}
+      {exportOpen && <ExportUnityPanel onClose={() => setExportOpen(false)} />}
       <input
         ref={fileRef}
         type="file"
-        accept="application/json,.json"
+        accept=".asset"
         style={{ display: 'none' }}
         onChange={handleImport}
       />

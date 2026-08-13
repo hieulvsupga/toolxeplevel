@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditor } from '../store';
+import { yUpToEditorAll } from '../lib/axis';
 import {
   crossSectionZRange,
   detectGrid,
@@ -125,6 +126,8 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
   };
 
   // Dựng danh sách khối 3D theo chế độ đang chọn.
+  // Bên trong hàm này ảnh vẫn được nghĩ theo hệ Y-up quen thuộc (y = chiều cao ảnh, z = bề dày);
+  // quy về hệ trục editor một lần duy nhất ở câu return cuối.
   const buildItems = (): { x: number; y: number; z: number; color: string }[] => {
     const items: { x: number; y: number; z: number; color: string }[] = [];
     if (!cells.length) return items;
@@ -190,7 +193,7 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
         }
       }
     }
-    return items;
+    return yUpToEditorAll(items);
   };
 
   const estBlocks = useMemo(

@@ -87,7 +87,7 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
   const deleteCells = useEditor((s) => s.deleteCells);
   const stampVoxels = useEditor((s) => s.stampVoxels);
 
-  // Bao đóng X/Z + dải Y + số khối mỗi tầng.
+  // Bao đóng X/Y + dải Z + số khối mỗi tầng (trục đứng là z).
   const bounds = useMemo(() => {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
     const perLayer = new Map<number, number>();
@@ -98,20 +98,20 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
       if (y > maxY) maxY = y;
       if (z < minZ) minZ = z;
       if (z > maxZ) maxZ = z;
-      perLayer.set(y, (perLayer.get(y) ?? 0) + 1);
+      perLayer.set(z, (perLayer.get(z) ?? 0) + 1);
     }
-    const valid = maxY >= minY;
-    let mostY = minY;
+    const valid = maxZ >= minZ;
+    let mostZ = minZ;
     let most = -1;
-    for (const [y, n] of perLayer) if (n > most) { most = n; mostY = y; }
-    return { minX, maxX, minY, maxY, minZ, maxZ, perLayer, valid, mostY };
+    for (const [z, n] of perLayer) if (n > most) { most = n; mostZ = z; }
+    return { minX, maxX, minY, maxY, minZ, maxZ, perLayer, valid, mostZ };
   }, [grid, version]);
 
   const [layer, setLayer] = useState<number | null>(null);
   useEffect(() => {
-    if (layer == null && bounds.valid) setLayer(bounds.mostY);
+    if (layer == null && bounds.valid) setLayer(bounds.mostZ);
   }, [layer, bounds]);
-  const curY = Math.max(bounds.minY, Math.min(bounds.maxY, layer ?? bounds.mostY));
+  const curZ = Math.max(bounds.minZ, Math.min(bounds.maxZ, layer ?? bounds.mostZ));
 
   const gridRef = useRef<HTMLCanvasElement>(null);
   const paintingRef = useRef(false);
@@ -123,7 +123,7 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
   const [pending, setPending] = useState<Map<string, string | null>>(new Map());
 
   const cols = bounds.valid ? bounds.maxX - bounds.minX + 1 : 0;
-  const rows = bounds.valid ? bounds.maxZ - bounds.minZ + 1 : 0;
+  const rows = bounds.valid ? bounds.maxY - bounds.minY + 1 : 0;
 
   // Vẽ lưới 2D của tầng hiện tại.
   useEffect(() => {
@@ -136,10 +136,10 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const x = bounds.minX + c;
-        const z = bounds.minZ + r;
-        const k = key(x, curY, z);
+        const y = bounds.minY + r;
+        const k = key(x, y, curZ);
         const pv = pending.get(k); // string = đặt màu, null = xóa, undefined = giữ nguyên
-        const col = pv !== undefined ? pv : (grid.get(x, curY, z)?.color ?? null);
+        const col = pv !== undefined ? pv : (grid.get(x, y, curZ)?.color ?? null);
         if (col) {
           ctx.fillStyle = col;
           ctx.fillRect(c * px, r * px, px, px);
@@ -151,7 +151,7 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
         }
       }
     }
-  }, [grid, version, curY, pending, bounds, cols, rows]);
+  }, [grid, version, curZ, pending, bounds, cols, rows]);
 
   // Dữ liệu 3D: cả scene, đè màu pending, làm mờ tầng khác.
   const previewItems = useMemo(() => {
@@ -163,17 +163,17 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
       const pv = pending.get(k);
       if (pv === null) continue; // xem trước: đã xóa
       let col = pv !== undefined ? pv : voxel.color;
-      if (y !== curY) col = dimHex(col);
+      if (z !== curZ) col = dimHex(col);
       items.push({ x, y, z, color: col });
     }
     // Khối mới thêm (add) chưa có trong grid.
     for (const [k, val] of pending) {
       if (val === null || seen.has(k)) continue;
       const [x, y, z] = k.split(',').map(Number);
-      items.push({ x, y, z, color: y !== curY ? dimHex(val) : val });
+      items.push({ x, y, z, color: z !== curZ ? dimHex(val) : val });
     }
     return items;
-  }, [grid, version, pending, curY]);
+  }, [grid, version, pending, curZ]);
 
   const commit = () => {
     setPending((prev) => {
@@ -211,13 +211,13 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
     const c = Math.floor(((e.clientX - rect.left) / rect.width) * cols);
     const r = Math.floor(((e.clientY - rect.top) / rect.height) * rows);
     if (c < 0 || c >= cols || r < 0 || r >= rows) return null;
-    return [bounds.minX + c, curY, bounds.minZ + r];
+    return [bounds.minX + c, bounds.minY + r, curZ];
   };
 
   // Giá trị chỉnh cho 1 ô theo công cụ: [key, màu|null] hoặc null nếu ô không hợp lệ.
-  const editFor = (x: number, z: number): [string, string | null] | null => {
-    const exists = !!grid.get(x, curY, z);
-    const k = key(x, curY, z);
+  const editFor = (x: number, y: number): [string, string | null] | null => {
+    const exists = !!grid.get(x, y, curZ);
+    const k = key(x, y, curZ);
     if (tool === 'erase') return exists ? [k, null] : null;
     if (tool === 'paint') return exists ? [k, color] : null;
     return [k, color]; // add: mọi ô trong lưới
@@ -227,7 +227,7 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
   const brushAt = (e: React.PointerEvent) => {
     const cell = cellFromEvent(e);
     if (!cell) return;
-    const edit = editFor(cell[0], cell[2]);
+    const edit = editFor(cell[0], cell[1]);
     if (!edit) return;
     setPending((prev) => {
       if (prev.has(edit[0]) && prev.get(edit[0]) === edit[1]) return prev;
@@ -244,12 +244,12 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
     if (!cell || !anchor) return;
     const x0 = Math.min(anchor[0], cell[0]);
     const x1 = Math.max(anchor[0], cell[0]);
-    const z0 = Math.min(anchor[2], cell[2]);
-    const z1 = Math.max(anchor[2], cell[2]);
+    const y0 = Math.min(anchor[1], cell[1]);
+    const y1 = Math.max(anchor[1], cell[1]);
     const next = new Map<string, string | null>();
     for (let x = x0; x <= x1; x++) {
-      for (let z = z0; z <= z1; z++) {
-        const edit = editFor(x, z);
+      for (let y = y0; y <= y1; y++) {
+        const edit = editFor(x, y);
         if (edit) next.set(edit[0], edit[1]);
       }
     }
@@ -274,7 +274,7 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
     else brushAt(e);
   };
 
-  const countAtLayer = bounds.perLayer.get(curY) ?? 0;
+  const countAtLayer = bounds.perLayer.get(curZ) ?? 0;
 
   return createPortal(
     <div className="import-screen">
@@ -285,23 +285,23 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
           <>
             {/* Chọn tầng */}
             <div className="tb-group">
-              <span className="tb-glabel">Tầng Y</span>
-              <button className="tb-icon" onClick={() => setLayer(curY - 1)} disabled={curY <= bounds.minY} title="Xuống tầng dưới">
+              <span className="tb-glabel">Tầng Z</span>
+              <button className="tb-icon" onClick={() => setLayer(curZ - 1)} disabled={curZ <= bounds.minZ} title="Xuống tầng dưới">
                 ▼
               </button>
               <input
                 type="range"
-                min={bounds.minY}
-                max={bounds.maxY}
+                min={bounds.minZ}
+                max={bounds.maxZ}
                 step={1}
-                value={curY}
+                value={curZ}
                 onChange={(e) => setLayer(Number(e.target.value))}
               />
-              <button className="tb-icon" onClick={() => setLayer(curY + 1)} disabled={curY >= bounds.maxY} title="Lên tầng trên">
+              <button className="tb-icon" onClick={() => setLayer(curZ + 1)} disabled={curZ >= bounds.maxZ} title="Lên tầng trên">
                 ▲
               </button>
               <span className="modal-dim">
-                {curY} / {bounds.minY}…{bounds.maxY} · {countAtLayer} khối
+                {curZ} / {bounds.minZ}…{bounds.maxZ} · {countAtLayer} khối
               </span>
             </div>
 
@@ -398,11 +398,14 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
           )}
         </div>
         <div className="layer-right">
-          <Canvas camera={{ position: [14, 12, 16], fov: 45 }} style={{ width: '100%', height: '100%' }}>
+          <Canvas
+            camera={{ position: [16, -16, 13], fov: 45, up: [0, 0, 1] }}
+            style={{ width: '100%', height: '100%' }}
+          >
             <color attach="background" args={['#15151a']} />
             <ambientLight intensity={0.75} />
-            <directionalLight position={[10, 20, 12]} intensity={1.2} />
-            <directionalLight position={[-10, 5, -8]} intensity={0.4} />
+            <directionalLight position={[10, 12, 20]} intensity={1.2} />
+            <directionalLight position={[-10, -8, 5]} intensity={0.4} />
             <PreviewMesh items={previewItems} />
             <OrbitControls makeDefault enableDamping dampingFactor={0.1} target={[0, 0, 0]} />
           </Canvas>

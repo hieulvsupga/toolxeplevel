@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
-import { buildInstanceData } from '@voxel/core';
+import { VoxelGrid, buildInstanceData } from '@voxel/core';
 import { useEditor } from '../store';
+import { useLayers } from '../lib/useLayers';
 import { beginDragFace, useDrag } from './dragStore';
+import { useHoverBlock } from './hoverStore';
 import { useInput } from './input';
 
 const tmpMatrix = new THREE.Matrix4();
@@ -26,28 +28,32 @@ export function Voxels({ onHover }: VoxelsProps) {
   const version = useEditor((s) => s.version);
   const mode = useEditor((s) => s.mode);
   const colorFilter = useEditor((s) => s.colorFilter);
+  const { hiddenVoxels } = useLayers();
 
   const meshRef = useRef<THREE.InstancedMesh>(null);
 
-  // Rebuild dữ liệu instance mỗi khi grid đổi (theo version). Lọc theo màu nếu có.
+  // Rebuild dữ liệu instance mỗi khi grid đổi (theo version). Lọc theo màu và theo layer bị tắt.
   const data = useMemo(() => {
     const full = buildInstanceData(grid);
-    if (!colorFilter.length) return full;
-    const keep = new Set(colorFilter);
+    const keep = colorFilter.length ? new Set(colorFilter) : null;
+    if (!keep && !hiddenVoxels.size) return full;
     const positions: [number, number, number][] = [];
     const cells: [number, number, number][] = [];
     const colors: string[] = [];
     for (let i = 0; i < full.count; i++) {
-      if (keep.has(full.colors[i])) {
-        positions.push(full.positions[i]);
-        cells.push(full.cells[i]);
-        colors.push(full.colors[i]);
-      }
+      if (keep && !keep.has(full.colors[i])) continue;
+      const [x, y, z] = full.cells[i];
+      if (hiddenVoxels.has(VoxelGrid.key(x, y, z))) continue;
+      positions.push(full.positions[i]);
+      cells.push(full.cells[i]);
+      colors.push(full.colors[i]);
     }
     return { count: positions.length, positions, cells, colors };
-  }, [grid, version, colorFilter]);
+  }, [grid, version, colorFilter, hiddenVoxels]);
   const cellsRef = useRef(data.cells);
   cellsRef.current = data.cells;
+  const colorsRef = useRef(data.colors);
+  colorsRef.current = data.colors;
 
   const [capacity, setCapacity] = useState(() => nextCapacity(data.count, 0));
   useEffect(() => {
@@ -111,11 +117,25 @@ export function Voxels({ onHover }: VoxelsProps) {
 
   const handleMove = (e: ThreeEvent<PointerEvent>) => {
     if (useDrag.getState().drag) return; // đang kéo -> khỏi tính hover
+    // HUD toạ độ đọc CHÍNH khối bị trỏ, không phải ô đích của thao tác: ở chế độ đặt, ô đích là ô
+    // trống áp mặt, hiện số đó ra thì người dùng đọc được toạ độ của một khối chưa tồn tại.
+    if (e.instanceId != null) {
+      const [cx, cy, cz] = cellsRef.current[e.instanceId];
+      useHoverBlock.getState().setBlock({
+        cell: [cx, cy, cz],
+        color: colorsRef.current[e.instanceId],
+      });
+    }
     const cell = targetCell(e);
     if (cell) {
       e.stopPropagation();
       onHover(cell);
     }
+  };
+
+  const clearHover = () => {
+    onHover(null);
+    useHoverBlock.getState().setBlock(null);
   };
 
   return (
@@ -126,7 +146,7 @@ export function Voxels({ onHover }: VoxelsProps) {
       args={[undefined, undefined, capacity]}
       onPointerDown={handleDown}
       onPointerMove={handleMove}
-      onPointerOut={() => onHover(null)}
+      onPointerOut={clearHover}
     >
       <boxGeometry args={[1, 1, 1]} />
       <meshStandardMaterial

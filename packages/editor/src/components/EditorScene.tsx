@@ -8,6 +8,7 @@ import { HoverPreview } from './HoverPreview';
 import { RegionPreview } from './RegionPreview';
 import { DragFill } from './DragFill';
 import { CameraRig } from './CameraRig';
+import { useHoverBlock } from './hoverStore';
 
 export function EditorScene() {
   const [hover, setHover] = useState<Cell | null>(null);
@@ -26,17 +27,23 @@ export function EditorScene() {
   return (
     <div className="canvas-wrap">
       <Canvas
-        camera={{ position: [16, 16, 16], fov: 45 }}
+        // Scene dựng theo Z-up để trùng hệ trục của LevelData: toạ độ một khối trong editor chính
+        // là toạ độ trong file .asset, không phải quy đổi ở đâu cả. OrbitControls đọc camera.up
+        // nên phải đặt ngay lúc tạo Canvas, trước khi controls khởi tạo.
+        camera={{ position: [18, -18, 14], fov: 45, up: [0, 0, 1] }}
         dpr={[1, 2]}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
-        onPointerMissed={() => setHoverDedup(null)}
+        onPointerMissed={() => {
+          setHoverDedup(null);
+          useHoverBlock.getState().setBlock(null);
+        }}
       >
         <color attach="background" args={['#1a1a1f']} />
         {/* Sáng đều mọi hướng: ambient nền + hemisphere sáng cả trên lẫn dưới */}
         <ambientLight intensity={0.75} />
         <hemisphereLight args={['#ffffff', '#c8c8d4', 0.7]} />
-        <directionalLight position={[12, 20, 8]} intensity={0.5} />
-        <directionalLight position={[-10, -14, -6]} intensity={0.35} />
+        <directionalLight position={[12, 8, 20]} intensity={0.5} />
+        <directionalLight position={[-10, -6, -14]} intensity={0.35} />
         <Ground onHover={setHoverDedup} />
         <Voxels onHover={setHoverDedup} />
         <VoxelEdges />

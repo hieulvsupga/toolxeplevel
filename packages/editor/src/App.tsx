@@ -3,6 +3,8 @@ import { EditorScene } from './components/EditorScene';
 import { Toolbar } from './components/Toolbar';
 import { DragHint } from './components/DragHint';
 import { ColorLegend } from './components/ColorLegend';
+import { CoordHud } from './components/CoordHud';
+import { LayerListPanel } from './components/LayerListPanel';
 import { useEditor } from './store';
 
 export function App() {
@@ -41,6 +43,8 @@ export function App() {
     <>
       <Toolbar />
       <EditorScene />
+      <CoordHud />
+      <LayerListPanel />
       <ColorLegend />
       <DragHint />
       <div className="hint">

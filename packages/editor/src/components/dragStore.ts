@@ -3,27 +3,29 @@ import type { Cell } from './Voxels';
 
 /**
  * Kéo-thả tạo vùng khối:
- *  - Kéo thường: vùng chữ nhật NGANG (4 hướng trong mặt phẳng X/Z) ở tầng neo.
+ *  - Kéo thường: vùng chữ nhật NGANG (4 hướng trong mặt phẳng X/Y) ở tầng neo.
  *  - Giữ Ctrl trong lúc kéo: di chuột lên/xuống để nâng/hạ CHIỀU CAO của vùng.
  * Thả chuột thì fill; Esc huỷ.
+ *
+ * Trục đứng là Z (trùng hệ trục của LevelData), nên "tầng" ở đây là z chứ không phải y.
  */
 export type DragMode = 'place' | 'remove' | 'paint';
 
 export interface DragState {
   mode: DragMode;
-  baseY: number; // tầng của mặt đáy (theo ô neo)
+  baseZ: number; // tầng của mặt đáy (theo ô neo)
   anchorX: number;
-  anchorZ: number;
+  anchorY: number;
   curX: number;
-  curZ: number;
-  loY: number; // dải tầng hiện tại (Ctrl để thay đổi)
-  hiY: number;
+  curY: number;
+  loZ: number; // dải tầng hiện tại (Ctrl để thay đổi)
+  hiZ: number;
 }
 
 interface DragStore {
   drag: DragState | null;
   start: (d: DragState) => void;
-  move: (x: number, z: number) => void;
+  move: (x: number, y: number) => void;
   setLayers: (lo: number, hi: number) => void;
   clear: () => void;
 }
@@ -31,10 +33,10 @@ interface DragStore {
 export const useDrag = create<DragStore>((set) => ({
   drag: null,
   start: (d) => set({ drag: d }),
-  move: (x, z) =>
-    set((s) => (s.drag ? { drag: { ...s.drag, curX: x, curZ: z } } : s)),
+  move: (x, y) =>
+    set((s) => (s.drag ? { drag: { ...s.drag, curX: x, curY: y } } : s)),
   setLayers: (lo, hi) =>
-    set((s) => (s.drag ? { drag: { ...s.drag, loY: lo, hiY: hi } } : s)),
+    set((s) => (s.drag ? { drag: { ...s.drag, loZ: lo, hiZ: hi } } : s)),
   clear: () => set({ drag: null }),
 }));
 
@@ -53,13 +55,13 @@ export function clampSpan(anchor: number, cur: number): [number, number] {
 /** Danh sách ô trong vùng hiện tại (đáy ngang × dải tầng). */
 export function regionCells(d: DragState): Cell[] {
   const [xMin, xMax] = clampSpan(d.anchorX, d.curX);
-  const [zMin, zMax] = clampSpan(d.anchorZ, d.curZ);
-  const yMin = Math.min(d.loY, d.hiY);
-  const yMax = Math.max(d.loY, d.hiY);
+  const [yMin, yMax] = clampSpan(d.anchorY, d.curY);
+  const zMin = Math.min(d.loZ, d.hiZ);
+  const zMax = Math.max(d.loZ, d.hiZ);
   const cells: Cell[] = [];
-  for (let y = yMin; y <= yMax; y++) {
+  for (let z = zMin; z <= zMax; z++) {
     for (let x = xMin; x <= xMax; x++) {
-      for (let z = zMin; z <= zMax; z++) {
+      for (let y = yMin; y <= yMax; y++) {
         cells.push([x, y, z]);
       }
     }
@@ -70,9 +72,9 @@ export function regionCells(d: DragState): Cell[] {
 /** Kích thước/tâm hộp bao vùng (dùng cho preview). */
 export function regionBox(d: DragState): { center: Cell; size: Cell } {
   const [xMin, xMax] = clampSpan(d.anchorX, d.curX);
-  const [zMin, zMax] = clampSpan(d.anchorZ, d.curZ);
-  const yMin = Math.min(d.loY, d.hiY);
-  const yMax = Math.max(d.loY, d.hiY);
+  const [yMin, yMax] = clampSpan(d.anchorY, d.curY);
+  const zMin = Math.min(d.loZ, d.hiZ);
+  const zMax = Math.max(d.loZ, d.hiZ);
   return {
     center: [(xMin + xMax + 1) / 2, (yMin + yMax + 1) / 2, (zMin + zMax + 1) / 2],
     size: [xMax - xMin + 1, yMax - yMin + 1, zMax - zMin + 1],
@@ -92,35 +94,35 @@ export function beginDragFace(
     mode !== 'place' ? [...cell] : [cell[0] + rn[0], cell[1] + rn[1], cell[2] + rn[2]];
   useDrag.getState().start({
     mode,
-    baseY: anchor[1],
+    baseZ: anchor[2],
     anchorX: anchor[0],
-    anchorZ: anchor[2],
+    anchorY: anchor[1],
     curX: anchor[0],
-    curZ: anchor[2],
-    loY: anchor[1],
-    hiY: anchor[1],
+    curY: anchor[1],
+    loZ: anchor[2],
+    hiZ: anchor[2],
   });
 }
 
 /**
- * Bắt đầu kéo trên mặt sàn. `layerY`: camera ở trên sàn -> 0,
+ * Bắt đầu kéo trên mặt sàn. `layerZ`: camera ở trên sàn -> 0,
  * camera ở dưới -> -1 (đặt xuống dưới).
  */
 export function beginDragGround(
   x: number,
-  z: number,
+  y: number,
   mode: DragMode,
-  layerY = 0,
+  layerZ = 0,
 ): void {
   if (useDrag.getState().drag) return;
   useDrag.getState().start({
     mode,
-    baseY: layerY,
+    baseZ: layerZ,
     anchorX: x,
-    anchorZ: z,
+    anchorY: y,
     curX: x,
-    curZ: z,
-    loY: layerY,
-    hiY: layerY,
+    curY: y,
+    loZ: layerZ,
+    hiZ: layerZ,
   });
 }

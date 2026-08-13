@@ -1,39 +1,39 @@
+import { GAME_COLORS, WALL_COLOR_ID } from '@voxel/core';
 import { useEditor } from '../store';
 
-/** Panel setting bảng màu: sửa từng màu, thêm, xóa. */
+/**
+ * Bảng tra màu: mỗi ô là một `ColorType` bên Unity.
+ *
+ * Không sửa/thêm/xóa được — bảng màu này là bản sao của `ColorPaletteData.asset` trong game, nên
+ * một ô "màu tự do" sẽ không ứng với ColorType nào và lúc xuất .asset sẽ phải đoán màu gần nhất.
+ * Muốn đổi màu thì đổi ở phía Unity rồi cập nhật lại `GAME_COLORS` trong core.
+ */
 export function PalettePanel() {
-  const palette = useEditor((s) => s.palette);
-  const setPaletteColor = useEditor((s) => s.setPaletteColor);
-  const removePaletteColor = useEditor((s) => s.removePaletteColor);
-  const addPaletteColor = useEditor((s) => s.addPaletteColor);
+  const color = useEditor((s) => s.color);
+  const setColor = useEditor((s) => s.setColor);
 
   return (
     <div className="palette-panel">
-      <div className="pal-title">Bảng màu ({palette.length})</div>
+      <div className="pal-title">ColorType ({GAME_COLORS.length})</div>
       <div className="pal-list">
-        {palette.map((c, i) => (
-          <div className="pal-row" key={i}>
-            <input
-              type="color"
-              value={c}
-              onChange={(e) => setPaletteColor(i, e.target.value)}
-              title="Đổi màu"
-            />
-            <span className="pal-hex">{c}</span>
-            <button
-              className="pal-del"
-              onClick={() => removePaletteColor(i)}
-              disabled={palette.length <= 1}
-              title="Xóa màu"
-            >
-              ✕
-            </button>
-          </div>
+        {GAME_COLORS.map((c) => (
+          <button
+            className={`pal-row${c.hex === color ? ' active' : ''}`}
+            key={c.id}
+            onClick={() => setColor(c.hex)}
+            title={
+              c.id === WALL_COLOR_ID
+                ? 'ColorType.None — khối tường: không bắn được, không tính vào điều kiện phá xong màn'
+                : `ColorType.${c.name} = ${c.id}`
+            }
+          >
+            <span className="pal-swatch" style={{ background: c.hex }} />
+            <span className="pal-id">{c.id}</span>
+            <span className="pal-name">{c.name}</span>
+            <span className="pal-hex">{c.hex}</span>
+          </button>
         ))}
       </div>
-      <button className="pal-add" onClick={addPaletteColor}>
-        + Thêm màu
-      </button>
     </div>
   );
 }

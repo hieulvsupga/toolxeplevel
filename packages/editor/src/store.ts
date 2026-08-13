@@ -1,5 +1,15 @@
 import { create } from 'zustand';
-import { VoxelGrid, fromJSON, toJSON, type Voxel } from '@voxel/core';
+import {
+  DEFAULT_LEVEL_META,
+  GAME_PALETTE,
+  VoxelGrid,
+  fromJSON,
+  gridFromLayers,
+  parseUnityAsset,
+  toJSON,
+  type LevelMeta,
+  type Voxel,
+} from '@voxel/core';
 
 export type ToolMode = 'place' | 'remove' | 'paint';
 
@@ -18,44 +28,12 @@ interface Change {
 type Batch = Change[];
 
 const AUTOSAVE_KEY = 'voxel-level-autosave';
-const PALETTE_KEY = 'voxel-palette';
+const META_KEY = 'voxel-level-meta';
 
-/** HSL -> hex (#rrggbb). h: 0-360, s/l: 0-1. */
-function hslHex(h: number, s: number, l: number): string {
-  const a = s * Math.min(l, 1 - l);
-  const f = (n: number) => {
-    const k = (n + h / 30) % 12;
-    const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-    return Math.round(255 * c)
-      .toString(16)
-      .padStart(2, '0');
-  };
-  return `#${f(0)}${f(8)}${f(4)}`;
-}
-
-/** 1 màu ngẫu nhiên tươi (độ bão hoà/sáng vừa mắt). */
-export function randomColor(): string {
-  return hslHex(Math.floor(Math.random() * 360), 0.62, 0.54);
-}
-
-function randomPalette(n = 10): string[] {
-  return Array.from({ length: n }, () => randomColor());
-}
-
-function loadPalette(): string[] {
-  try {
-    const raw = localStorage.getItem(PALETTE_KEY);
-    if (raw) {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr) && arr.length) return arr;
-    }
-  } catch {
-    // hỏng -> dùng bảng ngẫu nhiên
-  }
-  return randomPalette();
-}
-
-const initialPalette = loadPalette();
+// Bảng màu cố định = 16 ColorType của game + ô tường, không cho sửa/thêm/xóa. Mỗi ô ứng với đúng
+// 1 giá trị enum bên Unity, nên đổi hex của một ô là phá luôn ánh xạ đó: block vẽ ra sẽ không còn
+// khớp ColorType nào và lúc xuất phải đoán màu gần nhất.
+const initialPalette = GAME_PALETTE;
 
 interface EditorState {
   grid: VoxelGrid;
@@ -65,20 +43,36 @@ interface EditorState {
   palette: string[];
   mode: ToolMode;
   mirrorX: boolean;
-  mirrorZ: boolean;
+  mirrorY: boolean;
   /** Lọc hiển thị theo màu. Rỗng = hiện tất cả; có phần tử = chỉ hiện các màu này. */
   colorFilter: string[];
+  /**
+   * Layer đang tắt hiển thị, theo khoá "depthTựĐộng|colorType". Thuần chuyện xem cho dễ — phần
+   * xuất .asset không đọc nó, layer tắt vẫn được ghi đủ vào file.
+   */
+  hiddenLayers: string[];
+  toggleLayer: (key: string) => void;
+  /** Chỉ hiện đúng layer này, tắt hết phần còn lại (bấm lại lần nữa thì hiện lại tất cả). */
+  soloLayer: (key: string, allKeys: string[]) => void;
+  showAllLayers: () => void;
   undoStack: Batch[];
   redoStack: Batch[];
+
+  /** Các trường cấp level ngoài phần khối — nhập từ .asset vào đây, xuất ra cũng lấy từ đây. */
+  levelMeta: LevelMeta;
+  /** depth ép tay, khoá theo "depthTựĐộng|colorType". Xem `gridFromLayers`. */
+  depthOverrides: Record<string, number>;
+  /** Dời khối về giữa gốc toạ độ lúc xuất. Xem `buildLayers`. */
+  recenter: boolean;
+  setLevelMeta: (meta: LevelMeta) => void;
+  setDepthOverrides: (overrides: Record<string, number>) => void;
+  setRecenter: (recenter: boolean) => void;
 
   setColor: (color: string) => void;
   toggleColorFilter: (color: string) => void;
   clearColorFilter: () => void;
-  addPaletteColor: () => void;
-  setPaletteColor: (index: number, color: string) => void;
-  removePaletteColor: (index: number) => void;
   setMode: (mode: ToolMode) => void;
-  toggleMirror: (axis: 'x' | 'z') => void;
+  toggleMirror: (axis: 'x' | 'y') => void;
 
   /** Đặt (voxel) hoặc xóa (null) một loạt ô, gộp thành 1 undo. */
   fill: (cells: Cell[], voxel: Voxel | null) => void;
@@ -96,8 +90,8 @@ interface EditorState {
   redo: () => void;
   clear: () => void;
 
-  exportJSON: () => string;
-  importJSON: (json: string) => void;
+  /** Nạp file .asset của Unity, thay toàn bộ level hiện tại. Trả về cảnh báo để hiện cho user. */
+  importUnityAsset: (text: string) => string[];
 }
 
 function applyChange(grid: VoxelGrid, ch: Change, voxel: Voxel | undefined) {
@@ -105,16 +99,17 @@ function applyChange(grid: VoxelGrid, ch: Change, voxel: Voxel | undefined) {
   else grid.delete(ch.x, ch.y, ch.z);
 }
 
-/** Nhân bản ô qua mặt đối xứng x=0 / z=0 (ô x -> -1-x) nếu mirror đang bật. */
-function expandMirror(cells: Cell[], mx: boolean, mz: boolean): Cell[] {
-  if (!mx && !mz) return cells;
+// Trục đứng là z, nên hai mặt đối xứng đứng là x=0 và y=0.
+/** Nhân bản ô qua mặt đối xứng x=0 / y=0 (ô x -> -1-x) nếu mirror đang bật. */
+function expandMirror(cells: Cell[], mx: boolean, my: boolean): Cell[] {
+  if (!mx && !my) return cells;
   const out = new Map<string, Cell>();
   const add = (c: Cell) => out.set(`${c[0]},${c[1]},${c[2]}`, c);
   for (const [x, y, z] of cells) {
     add([x, y, z]);
     if (mx) add([-1 - x, y, z]);
-    if (mz) add([x, y, -1 - z]);
-    if (mx && mz) add([-1 - x, y, -1 - z]);
+    if (my) add([x, -1 - y, z]);
+    if (mx && my) add([-1 - x, -1 - y, z]);
   }
   return [...out.values()];
 }
@@ -126,10 +121,18 @@ export const useEditor = create<EditorState>((set, get) => ({
   palette: initialPalette,
   mode: 'place',
   mirrorX: false,
-  mirrorZ: false,
+  mirrorY: false,
   colorFilter: [],
+  hiddenLayers: [],
   undoStack: [],
   redoStack: [],
+
+  levelMeta: DEFAULT_LEVEL_META,
+  depthOverrides: {},
+  recenter: true,
+  setLevelMeta: (levelMeta) => set({ levelMeta }),
+  setDepthOverrides: (depthOverrides) => set({ depthOverrides }),
+  setRecenter: (recenter) => set({ recenter }),
 
   setColor: (color) => set({ color }),
 
@@ -141,31 +144,31 @@ export const useEditor = create<EditorState>((set, get) => ({
     })),
   clearColorFilter: () => set({ colorFilter: [] }),
 
-  addPaletteColor: () => set((s) => ({ palette: [...s.palette, randomColor()] })),
+  toggleLayer: (key) =>
+    set((s) => ({
+      hiddenLayers: s.hiddenLayers.includes(key)
+        ? s.hiddenLayers.filter((k) => k !== key)
+        : [...s.hiddenLayers, key],
+    })),
 
-  setPaletteColor: (index, color) =>
+  soloLayer: (key, allKeys) =>
     set((s) => {
-      const palette = s.palette.map((c, i) => (i === index ? color : c));
-      // Nếu đang chọn đúng màu này thì cập nhật màu hiện tại theo.
-      return { palette, color: s.color === s.palette[index] ? color : s.color };
+      const onlyThis = allKeys.filter((k) => k !== key);
+      const alreadySolo =
+        s.hiddenLayers.length === onlyThis.length && onlyThis.every((k) => s.hiddenLayers.includes(k));
+      return { hiddenLayers: alreadySolo ? [] : onlyThis };
     }),
 
-  removePaletteColor: (index) =>
-    set((s) => {
-      if (s.palette.length <= 1) return s; // giữ tối thiểu 1 màu
-      const removed = s.palette[index];
-      const palette = s.palette.filter((_, i) => i !== index);
-      return { palette, color: s.color === removed ? palette[0] : s.color };
-    }),
+  showAllLayers: () => set({ hiddenLayers: [] }),
 
   setMode: (mode) => set({ mode }),
   toggleMirror: (axis) =>
-    set((s) => (axis === 'x' ? { mirrorX: !s.mirrorX } : { mirrorZ: !s.mirrorZ })),
+    set((s) => (axis === 'x' ? { mirrorX: !s.mirrorX } : { mirrorY: !s.mirrorY })),
 
   fill: (cells, voxel) => {
-    const { grid, undoStack, mirrorX, mirrorZ } = get();
+    const { grid, undoStack, mirrorX, mirrorY } = get();
     const changes: Batch = [];
-    for (const [x, y, z] of expandMirror(cells, mirrorX, mirrorZ)) {
+    for (const [x, y, z] of expandMirror(cells, mirrorX, mirrorY)) {
       const before = grid.get(x, y, z);
       const after = voxel ? { ...voxel } : undefined;
       // Bỏ qua no-op.
@@ -185,9 +188,9 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   paint: (cells, color) => {
-    const { grid, undoStack, mirrorX, mirrorZ } = get();
+    const { grid, undoStack, mirrorX, mirrorY } = get();
     const changes: Batch = [];
-    for (const [x, y, z] of expandMirror(cells, mirrorX, mirrorZ)) {
+    for (const [x, y, z] of expandMirror(cells, mirrorX, mirrorY)) {
       const before = grid.get(x, y, z);
       if (!before || before.color === color) continue;
       const after: Voxel = { ...before, color };
@@ -280,11 +283,21 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({ version: get().version + 1, undoStack: [], redoStack: [] });
   },
 
-  exportJSON: () => toJSON(get().grid),
-
-  importJSON: (json) => {
-    const grid = fromJSON(json);
-    set({ grid, version: get().version + 1, undoStack: [], redoStack: [] });
+  importUnityAsset: (text) => {
+    const parsed = parseUnityAsset(text);
+    const { grid, depthOverrides, warnings } = gridFromLayers(parsed.layers);
+    set({
+      grid,
+      levelMeta: parsed.meta,
+      depthOverrides,
+      // Khối trong file đã nằm đúng chỗ designer đặt; dời tâm lúc xuất lại sẽ lặng lẽ đẩy toạ độ
+      // đi chỗ khác so với file gốc.
+      recenter: false,
+      version: get().version + 1,
+      undoStack: [],
+      redoStack: [],
+    });
+    return [...parsed.warnings, ...warnings];
   },
 }));
 
@@ -294,6 +307,22 @@ try {
   if (saved) useEditor.setState({ grid: fromJSON(saved), version: 1 });
 } catch {
   // dữ liệu hỏng -> bỏ qua, bắt đầu level trống
+}
+
+// Lưu tách khỏi grid: các trường này đổi theo thao tác riêng (nhập .asset, sửa form xuất) chứ
+// không theo `version`, nên gộp chung sẽ bỏ sót thay đổi.
+try {
+  const saved = localStorage.getItem(META_KEY);
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    useEditor.setState({
+      levelMeta: { ...DEFAULT_LEVEL_META, ...parsed.levelMeta },
+      depthOverrides: parsed.depthOverrides ?? {},
+      recenter: parsed.recenter ?? true,
+    });
+  }
+} catch {
+  // hỏng -> dùng mặc định
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -309,12 +338,32 @@ useEditor.subscribe((s, prev) => {
   }, 400);
 });
 
-// Lưu bảng màu ngay khi đổi.
 useEditor.subscribe((s, prev) => {
-  if (s.palette === prev.palette) return;
+  if (
+    s.levelMeta === prev.levelMeta &&
+    s.depthOverrides === prev.depthOverrides &&
+    s.recenter === prev.recenter
+  ) {
+    return;
+  }
   try {
-    localStorage.setItem(PALETTE_KEY, JSON.stringify(s.palette));
+    localStorage.setItem(
+      META_KEY,
+      JSON.stringify({
+        levelMeta: s.levelMeta,
+        depthOverrides: s.depthOverrides,
+        recenter: s.recenter,
+      }),
+    );
   } catch {
     // bỏ qua
   }
 });
+
+// Bảng màu cũ (ngẫu nhiên, sửa được) từng được lưu ở đây. Giờ bảng màu là hằng số theo game nên
+// key này chỉ còn là rác — dọn để không ai đọc nhầm nó nữa.
+try {
+  localStorage.removeItem('voxel-palette');
+} catch {
+  // bỏ qua
+}
