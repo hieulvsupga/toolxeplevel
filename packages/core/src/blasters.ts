@@ -77,6 +77,85 @@ export function makeBlaster(partial: Partial<BlasterEntry> & { id: number }): Bl
   };
 }
 
+// ---------- Cơ chế Connected: hai súng nối nhau ----------
+
+/**
+ * Quan hệ nối luôn ĐỐI XỨNG: id của mỗi bên nằm trong `connectedBlasterIds` của bên kia. Unity
+ * `ResolveReferences()` chỉ dịch id sang tham chiếu, không tự thêm chiều ngược lại — nên một chiều
+ * bị thiếu là data lỗi, không phải cách viết gọn.
+ */
+export function areConnected(a: BlasterEntry, b: BlasterEntry): boolean {
+  return a.connectedBlasterIds.includes(b.id) && b.connectedBlasterIds.includes(a.id);
+}
+
+/**
+ * Nối / bỏ nối hai súng, ghi cả hai chiều một lượt.
+ *
+ * Trả về mảng mới (không sửa mảng cũ) để dùng thẳng trong store React. Bỏ qua khi hai id trùng nhau
+ * hoặc một trong hai không tồn tại.
+ */
+export function toggleConnection(
+  blasters: BlasterEntry[],
+  idA: number,
+  idB: number,
+): BlasterEntry[] {
+  if (idA === idB) return blasters;
+  const a = blasters.find((b) => b.id === idA);
+  const b = blasters.find((x) => x.id === idB);
+  if (!a || !b) return blasters;
+
+  // Nối một nửa (data lỗi) thì coi như chưa nối và bấm lần này sẽ nối cho đủ hai chiều.
+  const linked = areConnected(a, b);
+  return blasters.map((blaster) => {
+    if (blaster.id !== idA && blaster.id !== idB) return blaster;
+    const other = blaster.id === idA ? idB : idA;
+    const ids = blaster.connectedBlasterIds.filter((id) => id !== other);
+    return {
+      ...blaster,
+      connectedBlasterIds: linked ? ids : [...ids, other],
+    };
+  });
+}
+
+/**
+ * Gom các súng nối nhau thành nhóm (thành phần liên thông) — nhóm là đơn vị phải cùng lên khoang
+ * chờ. Súng không nối gì thì thành nhóm một mình.
+ */
+export function connectedGroups(blasters: BlasterEntry[]): number[][] {
+  const byId = new Map(blasters.map((b) => [b.id, b]));
+  const seen = new Set<number>();
+  const groups: number[][] = [];
+  for (const blaster of blasters) {
+    if (seen.has(blaster.id)) continue;
+    const group: number[] = [];
+    const stack = [blaster.id];
+    seen.add(blaster.id);
+    while (stack.length) {
+      const id = stack.pop()!;
+      group.push(id);
+      for (const next of byId.get(id)?.connectedBlasterIds ?? []) {
+        if (!byId.has(next) || seen.has(next)) continue;
+        seen.add(next);
+        stack.push(next);
+      }
+    }
+    groups.push(group.sort((x, y) => x - y));
+  }
+  return groups;
+}
+
+/** Vị trí một súng trong các hàng chờ: `[hàng, bậc]`, hoặc null nếu chưa xếp. */
+export function dockPositionOf(
+  dockColumns: number[][],
+  id: number,
+): [row: number, index: number] | null {
+  for (let row = 0; row < dockColumns.length; row++) {
+    const index = dockColumns[row].indexOf(id);
+    if (index >= 0) return [row, index];
+  }
+  return null;
+}
+
 // ---------- List<int> trong file .asset ----------
 
 /**
@@ -234,6 +313,63 @@ export function validateShooters(
     problems.push(`Súng có bulletCount ≤ 0: ${noBullet.join(', ')}.`);
   }
 
+  // ---- Cơ chế Connected ----
+  const byIdMap = new Map(blasters.map((b) => [b.id, b]));
+  const selfLinked: number[] = [];
+  const danglingLinks: string[] = [];
+  const oneWay: string[] = [];
+  const badSlot: string[] = [];
+
+  for (const blaster of blasters) {
+    for (const other of new Set(blaster.connectedBlasterIds)) {
+      if (other === blaster.id) {
+        selfLinked.push(blaster.id);
+        continue;
+      }
+      const partner = byIdMap.get(other);
+      if (!partner) {
+        danglingLinks.push(`${blaster.id}→${other}`);
+        continue;
+      }
+      if (!partner.connectedBlasterIds.includes(blaster.id)) {
+        oneWay.push(`${blaster.id}→${other}`);
+        continue;
+      }
+      if (blaster.id > other) continue; // mỗi cặp chỉ báo một lần
+
+      // Hai khẩu nối nhau phải cùng lúc lên đầu hàng mới bay lên được. Nằm CÙNG MỘT HÀNG là chắc
+      // chắn không xong: mỗi hàng chỉ có một đầu hàng, nên cặp này không bao giờ rút được.
+      //
+      // Còn lệch BẬC thì vẫn chơi được (các hàng vơi nhanh chậm khác nhau nên hai khẩu vẫn có lúc
+      // cùng ở đầu hàng) — đã thử mô phỏng đúng như vậy. Việc lệch bậc chỉ trái quy ước dựng level,
+      // nên nó nằm ở `connectionWarnings`, không phải lỗi chặn.
+      const here = dockPositionOf(dockColumns, blaster.id);
+      const there = dockPositionOf(dockColumns, other);
+      if (!here || !there) continue; // đã có lỗi "chưa xếp hàng" ở trên, không báo trùng
+      if (here[0] === there[0]) {
+        badSlot.push(`${blaster.id}↔${other} (đều ở hàng ${here[0] + 1})`);
+      }
+    }
+  }
+
+  if (selfLinked.length) {
+    problems.push(`Súng tự nối chính nó: ${[...new Set(selfLinked)].join(', ')}.`);
+  }
+  if (danglingLinks.length) {
+    problems.push(`Nối tới id không có súng nào: ${danglingLinks.join(', ')}.`);
+  }
+  if (oneWay.length) {
+    problems.push(
+      `Nối một chiều (bên kia không nối lại): ${oneWay.join(', ')} — quan hệ nối phải đối xứng.`,
+    );
+  }
+  if (badSlot.length) {
+    problems.push(
+      `Súng nối nhau nằm cùng một hàng: ${badSlot.join(', ')} — mỗi hàng chỉ có một đầu hàng nên ` +
+        `cặp này không bao giờ cùng lên khoang được. Chuyển một khẩu sang hàng khác.`,
+    );
+  }
+
   for (const row of colorBalance(blockCounts, blasters)) {
     if (row.diff === 0) continue;
     const name = gameColorById(row.colorType)?.name ?? `ColorType ${row.colorType}`;
@@ -245,6 +381,64 @@ export function validateShooters(
   }
 
   return problems;
+}
+
+/**
+ * Chuyện trái quy ước nhưng KHÔNG chặn — level vẫn chạy và vẫn thắng được.
+ *
+ * Tách khỏi `validateShooters` để danh sách "cần sửa" chỉ chứa lỗi thật: nếu nhét mấy dòng này vào
+ * đó thì người dựng level sẽ phải sửa những thứ vốn không sai, hoặc tệ hơn là học cách bỏ qua cả
+ * danh sách.
+ */
+export function connectionWarnings(setup: ShooterSetup): string[] {
+  const { blasters, dockColumns } = setup;
+  const byId = new Map(blasters.map((b) => [b.id, b]));
+  const warnings: string[] = [];
+  const offSlot: string[] = [];
+  const unevenBullets: string[] = [];
+  const bigGroups: string[] = [];
+
+  for (const blaster of blasters) {
+    for (const other of new Set(blaster.connectedBlasterIds)) {
+      if (other <= blaster.id) continue; // mỗi cặp một lần, bỏ luôn trường hợp tự nối
+      const partner = byId.get(other);
+      if (!partner || !areConnected(blaster, partner)) continue; // lỗi thật, đã báo ở chỗ khác
+
+      const here = dockPositionOf(dockColumns, blaster.id);
+      const there = dockPositionOf(dockColumns, other);
+      // Cả 4 cặp trong ConnectedBox.asset đều là hai khẩu cùng bậc ở hai hàng cạnh nhau — hợp lý,
+      // vì có vậy thì trong game mới vẽ được thanh nối giữa hai khẩu đứng sát nhau.
+      if (here && there && here[0] !== there[0] && here[1] !== there[1]) {
+        offSlot.push(`${blaster.id}↔${other} (bậc ${here[1] + 1} vs ${there[1] + 1})`);
+      }
+      if (blaster.bulletCount !== partner.bulletCount) {
+        unevenBullets.push(`${blaster.id}(${blaster.bulletCount}) ↔ ${other}(${partner.bulletCount})`);
+      }
+    }
+  }
+
+  for (const group of connectedGroups(blasters)) {
+    if (group.length > 2) bigGroups.push(`${group.join('+')}`);
+  }
+
+  if (offSlot.length) {
+    warnings.push(
+      `Cặp nối nhau lệch bậc: ${offSlot.join(', ')}. Vẫn chơi được, nhưng data mẫu luôn nối hai ` +
+        `khẩu cùng một bậc ở hai hàng cạnh nhau (để trong game vẽ được thanh nối).`,
+    );
+  }
+  if (unevenBullets.length) {
+    warnings.push(
+      `Cặp nối nhau khác số đạn: ${unevenBullets.join(', ')}. Data mẫu luôn cho hai khẩu cùng số đạn.`,
+    );
+  }
+  if (bigGroups.length) {
+    warnings.push(
+      `Nhóm nối nhau nhiều hơn 2 khẩu: ${bigGroups.join(', ')}. Data mẫu chỉ có cặp đôi, và cả ` +
+        `nhóm phải cùng lúc có đủ chỗ trong khoang chờ mới rút được.`,
+    );
+  }
+  return warnings;
 }
 
 // ---------- Tạo nhanh theo màu khối ----------

@@ -1,5 +1,5 @@
 import { VoxelGrid } from './VoxelGrid';
-import { BLASTER_TYPES, type BlasterEntry } from './blasters';
+import { BLASTER_TYPES, connectedGroups, type BlasterEntry } from './blasters';
 import { WALL_COLOR_ID, gameColorById, matchGameColor } from './gameColors';
 
 /**
@@ -14,13 +14,19 @@ import { WALL_COLOR_ID, gameColorById, matchGameColor } from './gameColors';
  * 3. Mỗi hàng chờ chỉ với tới được súng ĐẦU hàng; súng đã rút ra thì nằm ở khoang chờ, tối đa
  *    `dockCount` súng cùng lúc.
  * 4. Súng bắn từng viên vào khối hở cùng màu. Hết đạn thì rời khoang, nhường chỗ.
- * 5. Thua = khoang chờ đầy mà không súng nào trong đó còn khối hở cùng màu để bắn (tắc hàng).
+ * 5. Súng nối nhau (`connectedBlasterIds`) là MỘT đơn vị: cả nhóm cùng lên khoang một lượt, nên
+ *    phải đủ chỗ trống cho cả nhóm và mọi thành viên phải đang ở đầu hàng của nó. Lên khoang rồi
+ *    thì mỗi súng bắn màu của riêng nó. Suy ra từ ConnectedBox.asset: cả 4 cặp đều là hai súng cùng
+ *    một bậc ở hai hàng cạnh nhau, cùng số đạn, khác màu — tức là hai khẩu bị buộc vào nhau nên
+ *    phải bay lên cùng lúc.
+ * 6. Thua = khoang chờ đầy mà không súng nào trong đó còn khối hở cùng màu để bắn (tắc hàng), hoặc
+ *    không rút nổi nhóm nào nữa (nhóm nối nhau mà chỗ trống không đủ).
  *
  * ---- Chỗ CHƯA mô phỏng (xem `ignoredMechanics` trong kết quả) ----
  * Các loại súng ngoài Normal (chìa/khoá, generator, búa…), `isHidden`, `iceHp`, `isChained` và các
- * danh sách connected/chained/inner đều bị coi như súng thường. Súng hai màu thì có mô phỏng: mỗi
- * màu một túi đạn `bulletCount` riêng — cách tính duy nhất khớp được số khối trong
- * DoubleBlasterBox.asset (494 khối mỗi màu = 8 súng × ~62 đạn × 2 màu).
+ * danh sách chained/inner đều bị coi như súng thường. Súng hai màu thì có mô phỏng: mỗi màu một túi
+ * đạn `bulletCount` riêng — cách tính duy nhất khớp được số khối trong DoubleBlasterBox.asset
+ * (494 khối mỗi màu = 8 súng × ~62 đạn × 2 màu).
  */
 
 /** Ô lưới -> `ColorType`. Tường giữ nguyên là 0. */
@@ -267,6 +273,8 @@ interface SimOutput {
   wastedBullets: number;
   /** Có súng nào không? Không có súng thì không phải "tắc" mà là chưa xếp súng. */
   deadlocked: boolean;
+  /** >0 = nghẽn vì một nhóm nối nhau cần nhiều chỗ hơn cả khoang chờ (số chỗ nhóm cần). */
+  groupNeedsSlots: number;
   /**
    * Trung bình tỉ lệ "súng đầu hàng bấm được ngay / số hàng còn súng", đo mỗi lần rút súng.
    *
@@ -302,7 +310,45 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
   const firablePool = (q: Queued) =>
     livePools(q).find((p) => (state.exposed.get(p.color)?.size ?? 0) > 0);
 
-  const canPull = () => cursor.some((c, i) => c < columns[i].length);
+  // Nhóm súng nối nhau: cả nhóm lên khoang một lượt.
+  const groupOf = new Map<number, number[]>();
+  for (const group of connectedGroups(input.blasters)) {
+    for (const id of group) groupOf.set(id, group);
+  }
+
+  /** Súng đang ở đầu hàng nào không (chưa rút). */
+  const frontRowOf = (id: number) => {
+    for (let i = 0; i < columns.length; i++) {
+      if (cursor[i] < columns[i].length && columns[i][cursor[i]] === id) return i;
+    }
+    return -1;
+  };
+
+  /**
+   * Nhóm rút được ngay: mọi thành viên đều đang ở đầu hàng của mình (mỗi người một hàng khác nhau)
+   * và khoang còn đủ chỗ cho cả nhóm.
+   */
+  const pullableGroup = (row: number, freeSlots: number): number[] | null => {
+    const head = columns[row][cursor[row]];
+    const group = groupOf.get(head) ?? [head];
+    if (group.length > freeSlots) return null;
+    const rows = new Set<number>();
+    for (const id of group) {
+      const r = frontRowOf(id);
+      if (r < 0 || rows.has(r)) return null; // chưa lên đầu hàng, hoặc hai thành viên cùng một hàng
+      rows.add(r);
+    }
+    return group;
+  };
+
+  const canPull = () => {
+    const free = slots - queue.length;
+    for (let i = 0; i < columns.length; i++) {
+      if (cursor[i] >= columns[i].length) continue;
+      if (pullableGroup(i, free)) return true;
+    }
+    return false;
+  };
 
   for (let guard = 0; guard < 2_000_000; guard++) {
     if (state.blocksLeft === 0) {
@@ -314,6 +360,7 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
         maxStalled,
         wastedBullets,
         deadlocked: false,
+        groupNeedsSlots: 0,
         choiceFreedom: freedomSamples ? freedomSum / freedomSamples : 1,
       };
     }
@@ -344,35 +391,40 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
       }
     }
 
-    // 3. Rút thêm súng từ đầu các hàng nếu khoang còn chỗ.
-    if (queue.length < slots && canPull()) {
-      let bestColumn = -1;
+    // 3. Rút thêm súng từ đầu các hàng nếu khoang còn chỗ. Đơn vị rút là NHÓM nối nhau.
+    if (queue.length < slots) {
+      const free = slots - queue.length;
+      let bestGroup: number[] | null = null;
       let bestScore = -Infinity;
       let fronts = 0;
       let firableFronts = 0;
       for (let i = 0; i < columns.length; i++) {
         if (cursor[i] >= columns[i].length) continue;
-        const blaster = byId.get(columns[i][cursor[i]])!;
-        const pools = poolsOf(blaster);
-        // Ưu tiên súng bắn được ngay; sau đó tới màu còn nhiều khối (kiểu gì cũng phải dùng).
+        const group = pullableGroup(i, free);
+        fronts++;
+        if (!group) continue; // đầu hàng này bị buộc vào nhóm chưa rút được -> lượt này không tính
+        const pools = group.flatMap((id) => poolsOf(byId.get(id)!));
+        // Ưu tiên nhóm bắn được ngay; sau đó tới màu còn nhiều khối (kiểu gì cũng phải dùng).
         const nowFirable = pools.some((p) => (state.exposed.get(p.color)?.size ?? 0) > 0);
         const remain = pools.reduce((s, p) => s + (state.remaining.get(p.color) ?? 0), 0);
-        fronts++;
         if (nowFirable) firableFronts++;
-        const score = (nowFirable ? 1_000_000 : 0) + remain;
+        // Nhóm chiếm nhiều chỗ thì rút sau, để không tự bóp chết khoang chờ.
+        const score = (nowFirable ? 1_000_000 : 0) + remain - group.length * 10;
         if (score > bestScore) {
           bestScore = score;
-          bestColumn = i;
+          bestGroup = group;
         }
       }
       if (fronts > 0) {
         freedomSum += firableFronts / fronts;
         freedomSamples++;
       }
-      if (bestColumn >= 0) {
-        const blaster = byId.get(columns[bestColumn][cursor[bestColumn]])!;
-        cursor[bestColumn]++;
-        queue.push({ id: blaster.id, pools: poolsOf(blaster), order: order++ });
+      if (bestGroup) {
+        for (const id of bestGroup) {
+          const row = frontRowOf(id);
+          cursor[row]++;
+          queue.push({ id, pools: poolsOf(byId.get(id)!), order: order++ });
+        }
         picks++;
         const stalled = queue.filter((q) => !firablePool(q)).length;
         maxStalled = Math.max(maxStalled, stalled);
@@ -381,7 +433,15 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
       }
     }
 
-    // 4. Không bắn được, không rút được -> tắc.
+    // 4. Không bắn được, không rút được -> tắc. Nếu còn súng ở hàng mà nghẽn vì nhóm nối nhau không
+    // đủ chỗ thì nói rõ ra, vì cách sửa khác hẳn (tăng dockCount / bỏ nối) so với tắc vì màu.
+    let groupNeeds = 0;
+    for (let i = 0; i < columns.length; i++) {
+      if (cursor[i] >= columns[i].length) continue;
+      const head = columns[i][cursor[i]];
+      const group = groupOf.get(head) ?? [head];
+      if (group.length > slots) groupNeeds = Math.max(groupNeeds, group.length);
+    }
     return {
       won: false,
       state,
@@ -390,6 +450,7 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
       maxStalled: Math.max(maxStalled, queue.length),
       wastedBullets,
       deadlocked: queue.length > 0 || canPull(),
+      groupNeedsSlots: groupNeeds,
       choiceFreedom: freedomSamples ? freedomSum / freedomSamples : 1,
     };
   }
@@ -402,6 +463,7 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
     maxStalled,
     wastedBullets,
     deadlocked: true,
+    groupNeedsSlots: 0,
     choiceFreedom: freedomSamples ? freedomSum / freedomSamples : 1,
   };
 }
@@ -420,7 +482,6 @@ function ignoredMechanics(blasters: BlasterEntry[]): string[] {
   if (blasters.some((b) => b.isHidden)) out.push('súng ẩn (isHidden)');
   if (blasters.some((b) => b.iceHp > 0)) out.push('súng bọc băng (iceHp)');
   if (blasters.some((b) => b.isChained)) out.push('súng bị khoá xích (isChained)');
-  if (blasters.some((b) => b.connectedBlasterIds.length)) out.push('súng nối nhau (connected)');
   if (blasters.some((b) => b.innerBlasterIds.length)) out.push('súng lồng trong (inner)');
   return out;
 }
@@ -472,9 +533,12 @@ export function checkWinnable(input: SolveInput): SolveResult {
     .map(([c, n]) => `${gameColorById(c)?.name ?? c} (${n} khối)`)
     .slice(0, 4)
     .join(', ');
-  const reason = sim.deadlocked
-    ? `Tắc hàng: khoang chờ đầy mà không súng nào còn khối hở cùng màu. Còn ${sim.state.blocksLeft} khối: ${stuck}.`
-    : `Hết súng mà còn ${sim.state.blocksLeft} khối: ${stuck}.`;
+  const reason = sim.groupNeedsSlots
+    ? `Nhóm ${sim.groupNeedsSlots} súng nối nhau phải cùng lên khoang một lượt, mà khoang chỉ có ` +
+      `${input.dockCount} ô — không bao giờ rút được. Còn ${sim.state.blocksLeft} khối: ${stuck}.`
+    : sim.deadlocked
+      ? `Tắc hàng: khoang chờ đầy mà không súng nào còn khối hở cùng màu. Còn ${sim.state.blocksLeft} khối: ${stuck}.`
+      : `Hết súng mà còn ${sim.state.blocksLeft} khối: ${stuck}.`;
   return shape(sim, POLICIES.length, reason);
 }
 

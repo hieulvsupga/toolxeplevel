@@ -607,15 +607,98 @@ body,
   border-color: #6c3535;
 }
 
-/* Mỗi hàng chờ = 1 cột dọc, các cột xếp cạnh nhau từ trái sang. */
-.bl-cols {
+/* Thanh mechanic */
+.bl-mech {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 5px;
-  overflow-x: auto;
+  flex-wrap: wrap;
+}
+
+.bl-mech-label {
+  font-size: 10px;
+  color: #7a7a85;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.bl-mech-btn {
+  background: #1c1c22;
+  color: #cfcfd6;
+  border: 1px solid #3c3c46;
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.bl-mech-btn:hover {
+  border-color: #5a5a6a;
+}
+
+.bl-mech-btn.active {
+  background: #22343a;
+  border-color: #3f9ea8;
+  color: #cfe6ea;
+}
+
+.bl-mech-off {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #8a8a95;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.bl-mech-off:hover {
+  color: #e8e8ec;
+}
+
+/* Mỗi hàng chờ = 1 cột dọc, các cột xếp cạnh nhau từ trái sang.
+   Cuộn ở KHUNG NGOÀI, không cuộn trong từng cột: các đoạn nối chạy ngang giữa hai cột, mà mỗi cột
+   cuộn riêng thì hai đầu dây trôi lệch nhau và đoạn nối chỉ vào chỗ trống. */
+.bl-cols {
+  overflow: auto;
+  max-height: 260px;
   padding: 6px;
   border: 1px solid #34343c;
   border-radius: 7px;
+}
+
+.bl-cols-inner {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  /* Khe giữa hai cột rộng hơn một chút so với các panel khác: đoạn nối chỉ ló ra ở đúng khe này,
+     khe 5px thì sợi dây ngắn tới mức gần như không thấy. */
+  gap: 10px;
+  /* Vừa khít nội dung để lớp SVG (inset: 0) trùng đúng vùng chứa các chip. */
+  width: max-content;
+  min-width: 100%;
+}
+
+/* Đoạn nối giữa các khẩu. Nằm dưới chip (SVG là con đầu tiên) nên dây chạy sau lưng chip, ló ra ở
+   khoảng trống giữa hai cột — trông đúng như một sợi dây nối hai khẩu. */
+.bl-link-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.bl-link-lines line {
+  stroke: #3f9ea8;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.bl-link-lines line.hot {
+  stroke: #7fe0ea;
+  stroke-width: 3;
 }
 
 .bl-col {
@@ -642,8 +725,6 @@ body,
   display: flex;
   flex-direction: column;
   gap: 3px;
-  max-height: 216px;
-  overflow-y: auto;
 }
 
 .bl-col-meta {
@@ -698,6 +779,76 @@ body,
 .bl-chip-orphan {
   border-color: #6c3535;
   color: #e88a8a;
+}
+
+.bl-chip-link {
+  font-size: 8px;
+  line-height: 1;
+}
+
+/* Đang nối với súng đang chọn. */
+.bl-chip-linked {
+  border-color: #3f9ea8;
+  box-shadow: 0 0 0 1px #3f9ea8 inset;
+}
+
+/* Đang ở chế độ nối: các súng khác thành mục tiêu bấm. */
+.bl-chip-pickable {
+  border-style: dashed;
+  border-color: #3f9ea8;
+  cursor: crosshair;
+}
+
+.bl-chip-pickable:hover {
+  background: #24343a;
+}
+
+/* Khẩu đã bấm đầu tiên, đang chờ bấm khẩu thứ hai. */
+.bl-chip-pending {
+  border-color: #7fe0ea;
+  background: #24343a;
+  box-shadow: 0 0 0 1px #7fe0ea inset;
+}
+
+.bl-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bl-links-head {
+  font-size: 10px;
+  color: #8a8a95;
+}
+
+.bl-links-none {
+  font-size: 10px;
+  color: #6f6f7a;
+}
+
+.bl-link-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #22343a;
+  color: #cfe6ea;
+  border: 1px solid #3f9ea8;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.bl-link-chip:hover {
+  background: #4a2626;
+  border-color: #6c3535;
+  color: #e88a8a;
+}
+
+.bl-linking-hint {
+  color: #9fd3da;
 }
 
 .bl-add {
@@ -1004,21 +1155,6 @@ body,
 
 .bl-apply-diff:hover {
   background: #35353f;
-}
-
-.bl-warn {
-  font-size: 11px;
-  color: #e8c07a;
-  background: #3a2f1c;
-  border: 1px solid #5c4a24;
-  border-radius: 7px;
-  padding: 6px 8px;
-  line-height: 1.45;
-}
-
-.bl-warn ul {
-  margin: 0;
-  padding-left: 15px;
 }
 
 .toolbar .count {

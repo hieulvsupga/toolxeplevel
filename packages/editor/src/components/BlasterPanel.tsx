@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   BLASTER_TYPES,
@@ -7,9 +7,9 @@ import {
   blockCountsByColor,
   checkWinnable,
   colorBalance,
+  dockPositionOf,
   gameColorById,
   rateDifficulty,
-  validateShooters,
   type DifficultyReport,
   type SolveResult,
 } from '@voxel/core';
@@ -23,6 +23,33 @@ interface BlasterPanelProps {
 const SHOOTABLE_COLORS = GAME_COLORS.filter((c) => c.id !== WALL_COLOR_ID);
 
 const DIFFICULTY_NAMES = ['Normal', 'Hard', 'VeryHard'];
+
+/**
+ * Thanh mechanic. Mỗi mechanic là một chế độ bấm riêng trên các chip súng.
+ *
+ * Để dạng mảng để thêm cơ chế sau chỉ là thêm một dòng — nhưng chỉ liệt kê thứ tool dựng được thật.
+ * Nút xám cho cơ chế chưa làm thì chỉ là chỗ để bấm vào rồi không có gì xảy ra.
+ */
+const MECHANICS = [
+  {
+    id: 'connected' as const,
+    label: '🔗 Connected',
+    hint: 'Bấm 2 khẩu để nối chúng vào nhau (bấm lại cặp đã nối là bỏ nối). Hai khẩu nối nhau phải cùng lên khoang chờ một lượt.',
+  },
+];
+
+type MechanicId = (typeof MECHANICS)[number]['id'];
+
+/** Một đoạn nối vẽ giữa 2 chip, toạ độ tính theo khung chứa các hàng. */
+interface LinkLine {
+  key: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  /** Cặp có dính tới súng đang chọn — vẽ đậm hơn. */
+  hot: boolean;
+}
 
 /**
  * Bảng xếp blaster, neo ở góc trên bên phải scene (không phải popup — để vừa xếp súng vừa xoay
@@ -47,6 +74,7 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
   const moveBlaster = useEditor((s) => s.moveBlaster);
   const autoBuildShooters = useEditor((s) => s.autoBuildShooters);
   const clearShooters = useEditor((s) => s.clearShooters);
+  const toggleBlasterConnection = useEditor((s) => s.toggleBlasterConnection);
   const levelMeta = useEditor((s) => s.levelMeta);
   const setLevelMeta = useEditor((s) => s.setLevelMeta);
 
@@ -62,6 +90,15 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
   const [check, setCheck] = useState<{ result: SolveResult; rating: DifficultyReport } | null>(
     null,
   );
+  /** Mechanic đang bật trên thanh mechanic; null = bấm chip là chọn súng như thường. */
+  const [mechanic, setMechanic] = useState<MechanicId | null>(null);
+  /** Khẩu đã bấm đầu tiên, đang chờ bấm khẩu thứ hai để nối. */
+  const [pendingLink, setPendingLink] = useState<number | null>(null);
+
+  // Vẽ đoạn nối: cần vị trí thật của từng chip nên phải đo sau khi layout xong.
+  const linksBoxRef = useRef<HTMLDivElement>(null);
+  const chipRefs = useRef(new Map<number, HTMLElement>());
+  const [linkLines, setLinkLines] = useState<LinkLine[]>([]);
 
   const blockCounts = useMemo(
     () => blockCountsByColor(grid),
@@ -70,10 +107,6 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
   );
 
   const balance = useMemo(() => colorBalance(blockCounts, blasters), [blockCounts, blasters]);
-  const problems = useMemo(
-    () => validateShooters({ blasters, dockColumns }, blockCounts),
-    [blasters, dockColumns, blockCounts],
-  );
 
   const byId = useMemo(() => new Map(blasters.map((b) => [b.id, b])), [blasters]);
   const selected = selectedId === null ? undefined : byId.get(selectedId);
@@ -82,6 +115,59 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
     setIdDraft(selected ? String(selected.id) : '');
     setIdError('');
   }, [selected?.id]);
+
+  /** Các súng đang nối với súng đang chọn — để tô sáng cho thấy cặp. */
+  const partnerIds = useMemo(
+    () => new Set(selected?.connectedBlasterIds ?? []),
+    [selected?.connectedBlasterIds],
+  );
+
+
+  /**
+   * Đo vị trí các chip rồi dựng danh sách đoạn nối.
+   *
+   * Toạ độ lấy hiệu của hai `getBoundingClientRect` (chip trừ khung chứa) nên đã trừ sẵn phần cuộn —
+   * lớp SVG nằm trong đúng khung đó và cuộn cùng nội dung, không cần bắt sự kiện scroll.
+   */
+  useLayoutEffect(() => {
+    const box = linksBoxRef.current;
+    if (!box) {
+      setLinkLines([]);
+      return;
+    }
+    const measure = () => {
+      const base = box.getBoundingClientRect();
+      const seen = new Set<string>();
+      const lines: LinkLine[] = [];
+      for (const blaster of blasters) {
+        for (const other of blaster.connectedBlasterIds) {
+          const key = blaster.id < other ? `${blaster.id}-${other}` : `${other}-${blaster.id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const from = chipRefs.current.get(blaster.id);
+          const to = chipRefs.current.get(other);
+          if (!from || !to) continue; // một đầu chưa xếp vào hàng -> không có gì để nối trên hình
+          const a = from.getBoundingClientRect();
+          const b = to.getBoundingClientRect();
+          lines.push({
+            key,
+            x1: a.left - base.left + a.width / 2,
+            y1: a.top - base.top + a.height / 2,
+            x2: b.left - base.left + b.width / 2,
+            y2: b.top - base.top + b.height / 2,
+            hot: selectedId === blaster.id || selectedId === other,
+          });
+        }
+      }
+      setLinkLines(lines);
+    };
+    measure();
+    // Panel co giãn / thêm bớt hàng đều làm chip xê dịch, mà những thứ đó không phải lúc nào cũng
+    // đi kèm một lần render của component này.
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [blasters, dockColumns, selectedId]);
 
   useEffect(() => {
     const toolbar = document.querySelector('.toolbar');
@@ -177,17 +263,57 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
       );
     }
     const color = gameColorById(b.color);
+    const linked = partnerIds.has(b.id);
+    const linking = mechanic === 'connected';
+    const pending = pendingLink === b.id;
+    const pickable = linking && pendingLink !== null && !pending;
+    const alreadyLinked =
+      pickable && (byId.get(pendingLink!)?.connectedBlasterIds.includes(b.id) ?? false);
     return (
       <button
-        className={`bl-chip${b.id === selectedId ? ' active' : ''}${orphan ? ' bl-chip-orphan' : ''}`}
+        ref={(el) => {
+          if (el) chipRefs.current.set(b.id, el);
+          else chipRefs.current.delete(b.id);
+        }}
+        className={
+          `bl-chip${b.id === selectedId ? ' active' : ''}` +
+          `${orphan ? ' bl-chip-orphan' : ''}${linked ? ' bl-chip-linked' : ''}` +
+          `${pending ? ' bl-chip-pending' : ''}${pickable ? ' bl-chip-pickable' : ''}`
+        }
         key={id}
-        onClick={() => setSelectedId(b.id)}
-        title={`id ${b.id} · ${color?.name ?? b.color} · ${b.bulletCount} đạn · ${
-          BLASTER_TYPES.find((t) => t.id === b.type)?.name ?? b.type
-        }${orphan ? ' — chưa nằm trong hàng nào' : ''}`}
+        onClick={() => {
+          if (linking) {
+            // Bấm 1: chọn khẩu đầu. Bấm 2: nối / bỏ nối. Bấm lại đúng khẩu đầu: huỷ.
+            if (pendingLink === null) {
+              setPendingLink(b.id);
+              setSelectedId(b.id);
+              return;
+            }
+            if (pending) {
+              setPendingLink(null);
+              return;
+            }
+            toggleBlasterConnection(pendingLink, b.id);
+            setPendingLink(null);
+            return;
+          }
+          setSelectedId(b.id);
+        }}
+        title={
+          pickable
+            ? `${alreadyLinked ? 'Bỏ nối' : 'Nối'} ${pendingLink} ↔ ${b.id}`
+            : pending
+              ? `${b.id} — bấm khẩu thứ hai để nối, hoặc bấm lại để huỷ`
+              : `id ${b.id} · ${color?.name ?? b.color} · ${b.bulletCount} đạn · ${
+                  BLASTER_TYPES.find((t) => t.id === b.type)?.name ?? b.type
+                }${b.connectedBlasterIds.length ? ` · nối với ${b.connectedBlasterIds.join(', ')}` : ''}${
+                  orphan ? ' — chưa nằm trong hàng nào' : ''
+                }`
+        }
       >
         <span className="bl-chip-swatch" style={{ background: color?.hex ?? '#000' }} />
         <span className="bl-chip-num">{b.bulletCount}</span>
+        {b.connectedBlasterIds.length > 0 && <span className="bl-chip-link">🔗</span>}
         {b.type !== 0 && <span className="bl-chip-type">T{b.type}</span>}
       </button>
     );
@@ -255,6 +381,46 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
         >
           🎯 Thử giải &amp; chấm độ khó
         </button>
+
+        {/* Thanh mechanic: bật một cơ chế lên rồi bấm thẳng vào các chip súng bên dưới. */}
+        <div className="bl-mech">
+          <span className="bl-mech-label">Mechanic</span>
+          {MECHANICS.map((m) => (
+            <button
+              key={m.id}
+              className={`bl-mech-btn${mechanic === m.id ? ' active' : ''}`}
+              // Bật/tắt mechanic thì bỏ luôn khẩu đang chờ. Xoá ở đây chứ không trong một effect
+              // theo `mechanic`: nút "+ nối" bên dưới bật mechanic KÈM một khẩu chờ sẵn, effect sẽ
+              // xoá mất khẩu đó ngay lần render sau.
+              onClick={() => {
+                setMechanic((cur) => (cur === m.id ? null : m.id));
+                setPendingLink(null);
+              }}
+              title={m.hint}
+            >
+              {m.label}
+            </button>
+          ))}
+          {mechanic && (
+            <button
+              className="bl-mech-off"
+              onClick={() => {
+                setMechanic(null);
+                setPendingLink(null);
+              }}
+              title="Tắt mechanic"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        {mechanic && (
+          <div className="bl-note bl-linking-hint">
+            {pendingLink === null
+              ? MECHANICS.find((m) => m.id === mechanic)?.hint
+              : `Đã chọn ${pendingLink} — bấm khẩu thứ hai để nối (bấm lại ${pendingLink} để huỷ).`}
+          </div>
+        )}
 
         {check && (
           <div className={`bl-check${check.result.winnable ? ' ok' : ' bad'}`}>
@@ -388,7 +554,22 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
           <div className="bl-note">Chưa có hàng nào — đặt “Hàng” ở trên rồi bấm “+”.</div>
         ) : (
           <div className="bl-cols">
-            {dockColumns.map((column, row) => {
+            <div className="bl-cols-inner" ref={linksBoxRef}>
+              {/* Đoạn nối vẽ dưới các chip (SVG đứng trước nên chip che lên), nên trông như dây
+                  chạy từ mép khẩu này sang mép khẩu kia. */}
+              <svg className="bl-link-lines">
+                {linkLines.map((l) => (
+                  <line
+                    key={l.key}
+                    x1={l.x1}
+                    y1={l.y1}
+                    x2={l.x2}
+                    y2={l.y2}
+                    className={l.hot ? 'hot' : undefined}
+                  />
+                ))}
+              </svg>
+              {dockColumns.map((column, row) => {
               const bullets = column.reduce((s, id) => s + (byId.get(id)?.bulletCount ?? 0), 0);
               return (
                 <div className="bl-col" key={row}>
@@ -412,7 +593,8 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
                   </div>
                 </div>
               );
-            })}
+              })}
+            </div>
           </div>
         )}
 
@@ -494,6 +676,50 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
               </label>
             </div>
 
+            {/* Cơ chế Connected: nối 2 súng, quan hệ luôn hai chiều. */}
+            <div className="bl-links">
+              <span className="bl-links-head">🔗 Nối với</span>
+              {selected.connectedBlasterIds.length === 0 && (
+                <span className="bl-links-none">chưa nối</span>
+              )}
+              {selected.connectedBlasterIds.map((pid) => {
+                const partner = byId.get(pid);
+                const pos = dockPositionOf(dockColumns, pid);
+                return (
+                  <button
+                    className={`bl-link-chip${partner ? '' : ' bl-chip-missing'}`}
+                    key={pid}
+                    onClick={() => toggleBlasterConnection(selected.id, pid)}
+                    title={
+                      partner
+                        ? `Bỏ nối với ${pid}${pos ? ` (hàng ${pos[0] + 1}, bậc ${pos[1] + 1})` : ''}`
+                        : `id ${pid} không có súng nào — bấm để bỏ nối`
+                    }
+                  >
+                    {partner && (
+                      <span
+                        className="bl-chip-swatch"
+                        style={{ background: gameColorById(partner.color)?.hex ?? '#000' }}
+                      />
+                    )}
+                    {pid} ✕
+                  </button>
+                );
+              })}
+              {/* Chỗ này chỉ để XEM và BỎ nối. Tạo nối thì đi qua thanh mechanic ở trên — hai lối
+                  cùng làm một việc chỉ khiến người dùng phải đoán nên dùng lối nào. */}
+              <button
+                className={`bl-add${mechanic === 'connected' ? ' active' : ''}`}
+                onClick={() => {
+                  setMechanic('connected');
+                  setPendingLink(selected.id);
+                }}
+                title="Bật mechanic Connected và chọn sẵn khẩu này, rồi bấm khẩu thứ hai"
+              >
+                + nối
+              </button>
+            </div>
+
             <div className="bl-edit-actions">
               <button onClick={() => nudge(-1)} title="Lên một chỗ trong hàng">
                 ▲
@@ -523,17 +749,10 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
           </div>
         )}
 
-        {/* Chưa có súng nào thì chưa có gì để "sửa" — bảng cân đối ở trên đã nói rõ còn thiếu bao
-            nhiêu đạn mỗi màu, nên danh sách lỗi lúc đó chỉ là tiếng ồn. */}
-        {problems.length > 0 && blasters.length > 0 && (
-          <div className="bl-warn">
-            <ul>
-              {problems.map((p) => (
-                <li key={p}>{p}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {/* Panel này không còn hộp lỗi / hộp lưu ý nào. Bảng "Đạn so với khối" ở trên vẫn tô đỏ màu
+            nào thiếu đạn, và nút Thử giải vẫn nói rõ vì sao không win được — hai chỗ đó đủ để thấy
+            vấn đề. `validateShooters()` / `connectionWarnings()` vẫn nằm trong core (bảng Xuất
+            .asset còn dùng), nên bật lại chỗ này lúc nào cũng được. */}
       </div>
     </div>,
     document.body,

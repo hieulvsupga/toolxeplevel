@@ -12,6 +12,7 @@ import {
   nextBlasterId,
   parseUnityAsset,
   toJSON,
+  toggleConnection,
   type BlasterEntry,
   type LevelMeta,
   type Vec3,
@@ -101,6 +102,8 @@ interface EditorState {
   /** Sinh sẵn bộ súng khớp số khối từng màu, ghi đè bộ đang có. */
   autoBuildShooters: (rowCount: number, bulletsPerBlaster: number) => void;
   clearShooters: () => void;
+  /** Nối / bỏ nối hai súng (cơ chế Connected) — luôn ghi cả hai chiều. */
+  toggleBlasterConnection: (idA: number, idB: number) => void;
 
   setColor: (color: string) => void;
   toggleColorFilter: (color: string) => void;
@@ -264,6 +267,9 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   clearShooters: () => set({ blasters: [], dockColumns: [] }),
+
+  toggleBlasterConnection: (idA, idB) =>
+    set((s) => ({ blasters: toggleConnection(s.blasters, idA, idB) })),
 
   setColor: (color) => set({ color }),
 
