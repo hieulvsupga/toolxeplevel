@@ -2,9 +2,11 @@ import { useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   WALL_COLOR_ID,
+  blockCountsByColorFromLayers,
   buildLayers,
   gameColorById,
   toUnityAsset,
+  validateShooters,
   type LevelMeta,
   type Vec3,
 } from '@voxel/core';
@@ -57,6 +59,8 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
   const recenter = useEditor((s) => s.recenter);
   const setRecenter = useEditor((s) => s.setRecenter);
   const centerOverride = useEditor((s) => s.centerOverride);
+  const blasters = useEditor((s) => s.blasters);
+  const dockColumns = useEditor((s) => s.dockColumns);
 
   const built = useMemo(
     () => buildLayers(grid, { recenter, centerOverride }),
@@ -84,8 +88,17 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
   const set = <K extends keyof LevelMeta>(key: K, value: LevelMeta[K]) =>
     setMeta({ ...meta, [key]: value });
 
+  // Kiểm phần súng ngay tại đây thay vì chỉ trong bảng Blaster: file xuất ra mà đạn không khớp số
+  // khối thì màn không thắng được, và lỗi đó chỉ lộ ra khi chơi thử trong Unity.
+  const shooterProblems = useMemo(
+    () => validateShooters({ blasters, dockColumns }, blockCountsByColorFromLayers(layers)),
+    [blasters, dockColumns, layers],
+  );
+
   const handleExport = () => {
-    const blob = new Blob([toUnityAsset(layers, meta)], { type: 'text/yaml' });
+    const blob = new Blob([toUnityAsset(layers, meta, { blasters, dockColumns })], {
+      type: 'text/yaml',
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -117,7 +130,27 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
         <div className="ex-summary">
           {built.voxelCount} khối · {layers.length} layer · depth 0…{built.maxDepth} · kích thước{' '}
           {size}
+          <br />
+          {blasters.length} súng · {dockColumns.length} hàng chờ
         </div>
+
+        {blasters.length === 0 ? (
+          <div className="ex-warn">
+            Level chưa có súng nào — mở “🔫 Blaster” để xếp súng, không có súng thì không phá được
+            khối nào.
+          </div>
+        ) : (
+          shooterProblems.length > 0 && (
+            <div className="ex-warn">
+              Phần súng còn {shooterProblems.length} chỗ chưa ổn (mở “🔫 Blaster” để sửa):
+              <ul>
+                {shooterProblems.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            </div>
+          )
+        )}
 
         {built.approximatedColors.length > 0 && (
           <div className="ex-warn">

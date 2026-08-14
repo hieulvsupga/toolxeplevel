@@ -1,3 +1,11 @@
+import {
+  EMPTY_SHOOTERS,
+  decodeIntList,
+  encodeIntList,
+  makeBlaster,
+  type BlasterEntry,
+  type ShooterSetup,
+} from './blasters';
 import type { LevelLayer } from './layers';
 import type { Vec3 } from './types';
 
@@ -53,13 +61,17 @@ function vec3(v: Vec3): string {
 /**
  * Sinh nội dung file `.asset` (YAML của Unity) cho một `LevelData`.
  *
- * Chỉ ghi phần khối (`layers`); mọi mảng cơ chế và danh sách shooter đều để rỗng — Unity đọc lên
- * là mảng rỗng, không phải null, nên gameplay code duyệt chúng vẫn an toàn.
+ * Ghi phần khối (`layers`) và phần shooter (`blasters` + `dockColumns`); các mảng cơ chế còn lại để
+ * rỗng — Unity đọc lên là mảng rỗng, không phải null, nên gameplay code duyệt chúng vẫn an toàn.
  *
  * Không sinh kèm file `.meta`: thả .asset vào project là Unity tự tạo .meta với GUID mới, an toàn
  * hơn tự đặt GUID rồi lỡ trùng với một asset sẵn có.
  */
-export function toUnityAsset(layers: LevelLayer[], meta: LevelMeta): string {
+export function toUnityAsset(
+  layers: LevelLayer[],
+  meta: LevelMeta,
+  shooters: ShooterSetup = EMPTY_SHOOTERS,
+): string {
   const lines: string[] = [
     '%YAML 1.1',
     '%TAG !u! tag:unity3d.com,2011:',
@@ -119,10 +131,43 @@ export function toUnityAsset(layers: LevelLayer[], meta: LevelMeta): string {
     '  colorBoxData: []',
     '  shieldData: []',
     '  flyingPiggyData: []',
-    '  blasters: []',
-    '  dockColumns: []',
-    '',
   );
+
+  if (shooters.blasters.length === 0) {
+    lines.push('  blasters: []');
+  } else {
+    lines.push('  blasters:');
+    for (const b of shooters.blasters) {
+      lines.push(
+        `  - id: ${num(b.id)}`,
+        `    sourceId: ${num(b.sourceId)}`,
+        `    type: ${num(b.type)}`,
+        `    color: ${num(b.color)}`,
+        `    secondaryColor: ${num(b.secondaryColor)}`,
+        `    bulletCount: ${num(b.bulletCount)}`,
+        `    isHidden: ${b.isHidden ? 1 : 0}`,
+        `    iceHp: ${num(b.iceHp)}`,
+        `    isPilot: ${b.isPilot ? 1 : 0}`,
+        `    isChained: ${b.isChained ? 1 : 0}`,
+        // Dấu cách sau dấu hai chấm là cách Unity ghi List<int> rỗng — giữ đúng để diff với file
+        // Unity ghi lại là rỗng.
+        `    connectedBlasterIds: ${encodeIntList(b.connectedBlasterIds)}`,
+        `    chainedBlasterIds: ${encodeIntList(b.chainedBlasterIds)}`,
+        `    innerBlasterIds: ${encodeIntList(b.innerBlasterIds)}`,
+      );
+    }
+  }
+
+  if (shooters.dockColumns.length === 0) {
+    lines.push('  dockColumns: []');
+  } else {
+    lines.push('  dockColumns:');
+    for (const column of shooters.dockColumns) {
+      lines.push(`  - blasterIds: ${encodeIntList(column)}`);
+    }
+  }
+
+  lines.push('');
 
   return lines.join('\n');
 }
@@ -130,8 +175,33 @@ export function toUnityAsset(layers: LevelLayer[], meta: LevelMeta): string {
 export interface ParsedLevelAsset {
   meta: LevelMeta;
   layers: LevelLayer[];
+  shooters: ShooterSetup;
   /** Chuyện đáng ngờ nhưng không chặn được việc đọc file — hiện cho người dùng xem. */
   warnings: string[];
+}
+
+/** Một dòng `    key: value` bên trong một phần tử của `blasters` -> field tương ứng. */
+function readBlasterField(blaster: BlasterEntry, key: string, raw: string): void {
+  switch (key) {
+    case 'sourceId':
+    case 'type':
+    case 'color':
+    case 'secondaryColor':
+    case 'bulletCount':
+    case 'iceHp':
+      blaster[key] = Number(raw);
+      return;
+    case 'isHidden':
+    case 'isPilot':
+    case 'isChained':
+      blaster[key] = raw !== '0';
+      return;
+    case 'connectedBlasterIds':
+    case 'chainedBlasterIds':
+    case 'innerBlasterIds':
+      blaster[key] = decodeIntList(raw);
+      return;
+  }
 }
 
 const NUMBER = String.raw`-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?`;
@@ -146,14 +216,16 @@ const VEC3_RE = new RegExp(
  * thụt lề và các trường mình cần đều là scalar hoặc Vector3 một dòng, nên bám sát dạng đó vừa gọn
  * vừa không kéo thêm phụ thuộc chỉ để đọc vài chục dòng.
  *
- * Các mảng cơ chế (ice/bomb/playpen…) và blaster/dock bị bỏ qua — tool chưa dựng được chúng, và
- * đọc vào rồi ghi ra thành mảng rỗng thì tệ hơn là nói thẳng ra rằng chúng không được giữ.
+ * Các mảng cơ chế (ice/bomb/playpen…) bị bỏ qua — tool chưa dựng được chúng, và đọc vào rồi ghi ra
+ * thành mảng rỗng thì tệ hơn là nói thẳng ra rằng chúng không được giữ.
  */
 export function parseUnityAsset(text: string): ParsedLevelAsset {
   const lines = text.split(/\r?\n/);
   const warnings: string[] = [];
   const meta: LevelMeta = { ...DEFAULT_LEVEL_META };
   const layers: LevelLayer[] = [];
+  const blasters: BlasterEntry[] = [];
+  const dockColumns: number[][] = [];
 
   const scriptLine = lines.find((l) => l.includes('m_Script:'));
   if (!scriptLine) {
@@ -178,6 +250,9 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
 
   let layer: LevelLayer | undefined;
   let inLayers = false;
+  let blaster: BlasterEntry | undefined;
+  let inBlasters = false;
+  let inDock = false;
 
   for (const line of lines) {
     if (inLayers) {
@@ -206,8 +281,43 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
       }
     }
 
+    if (inBlasters) {
+      if (/^  \S/.test(line) && !/^  - /.test(line)) {
+        inBlasters = false;
+        blaster = undefined;
+      } else {
+        const id = /^  - id:\s*(-?\d+)/.exec(line);
+        if (id) {
+          blaster = makeBlaster({ id: Number(id[1]) });
+          blasters.push(blaster);
+          continue;
+        }
+        const field = /^    (\w+):\s*(.*)$/.exec(line);
+        if (field && blaster) readBlasterField(blaster, field[1], field[2].trim());
+        continue;
+      }
+    }
+
+    if (inDock) {
+      if (/^  \S/.test(line) && !/^  - /.test(line)) {
+        inDock = false;
+      } else {
+        const ids = /^  - blasterIds:\s*(\S*)\s*$/.exec(line);
+        if (ids) dockColumns.push(decodeIntList(ids[1]));
+        continue;
+      }
+    }
+
     if (/^  layers:\s*$/.test(line)) {
       inLayers = true;
+      continue;
+    }
+    if (/^  blasters:\s*$/.test(line)) {
+      inBlasters = true;
+      continue;
+    }
+    if (/^  dockColumns:\s*$/.test(line)) {
+      inDock = true;
       continue;
     }
 
@@ -254,11 +364,20 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
     'colorBoxData',
     'shieldData',
     'flyingPiggyData',
-    'blasters',
   ].filter((key) => lines.some((l) => l.startsWith(`  ${key}:`) && !l.endsWith('[]')));
   if (dropped.length) {
     warnings.push(`Không đọc (và sẽ mất nếu xuất đè): ${dropped.join(', ')}.`);
   }
 
-  return { meta, layers, warnings };
+  // Các loại súng ngoài Normal đọc/ghi được nguyên vẹn nhưng bảng blaster của tool chưa dựng được
+  // luật của chúng — nói ra để người dựng level đừng tưởng đã kiểm hết.
+  const specialTypes = [...new Set(blasters.filter((b) => b.type !== 0).map((b) => b.type))];
+  if (specialTypes.length) {
+    warnings.push(
+      `Có súng loại đặc biệt (type ${specialTypes.join(', ')}) — giữ nguyên khi xuất, nhưng tool ` +
+        `chỉ kiểm được luật của loại Normal.`,
+    );
+  }
+
+  return { meta, layers, shooters: { blasters, dockColumns }, warnings };
 }

@@ -424,6 +424,603 @@ body,
   cursor: default;
 }
 
+/* ---- Xếp blaster: panel neo góc trên phải ---- */
+/* Chừa 104px bên phải cho bảng màu (.color-legend rộng 84px, right 10px) để hai panel không đè
+   nhau, và tự co chiều cao theo nội dung với thanh cuộn riêng bên trong. */
+.bl-dock {
+  position: fixed;
+  top: 56px;
+  right: 104px;
+  z-index: 45;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 72px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 28, 34, 0.94);
+  border: 1px solid #34343c;
+  border-radius: 9px;
+  color: #e8e8ec;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+}
+
+.bl-dock-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #34343c;
+  font-size: 13px;
+}
+
+.bl-dock-sum {
+  flex: 1;
+  font-size: 11px;
+  color: #8a8a95;
+  font-variant-numeric: tabular-nums;
+}
+
+.bl-dock-body {
+  overflow-y: auto;
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bl-dock-sub {
+  font-size: 11px;
+  color: #9a9aa5;
+  font-variant-numeric: tabular-nums;
+}
+
+.bl-note {
+  font-size: 11px;
+  color: #8a8a95;
+  line-height: 1.5;
+}
+
+.bl-balance {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bl-bal-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-variant-numeric: tabular-nums;
+}
+
+.bl-bal-row.ok {
+  background: #1d2a1f;
+  border-color: #2f4a33;
+}
+
+.bl-bal-row.short {
+  background: #3a2020;
+  border-color: #5c2c2c;
+}
+
+.bl-bal-row.over {
+  background: #3a2f1c;
+  border-color: #5c4a24;
+}
+
+.bl-bal-name {
+  flex: 1;
+  color: #cfcfd6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bl-bal-num {
+  color: #e8e8ec;
+  min-width: 34px;
+  text-align: right;
+}
+
+.bl-bal-sep {
+  color: #7a7a85;
+}
+
+.bl-bal-diff {
+  min-width: 40px;
+  text-align: right;
+  color: #9a9aa5;
+}
+
+.bl-bal-row.ok .bl-bal-diff {
+  color: #7fc98a;
+}
+
+.bl-bal-row.short .bl-bal-diff {
+  color: #e88a8a;
+}
+
+.bl-bal-row.over .bl-bal-diff {
+  color: #e8c07a;
+}
+
+.bl-quick {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.bl-quick-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10px;
+  color: #8a8a95;
+}
+
+.bl-quick-field input {
+  width: 56px;
+  background: #1c1c22;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bl-auto,
+.bl-icon-btn {
+  background: #2c2c34;
+  color: #e8e8ec;
+  border: 1px solid #4a4a56;
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bl-auto {
+  flex: 1;
+  min-width: 120px;
+}
+
+.bl-auto:hover:not(:disabled),
+.bl-icon-btn:hover:not(:disabled) {
+  background: #35353f;
+}
+
+.bl-auto:disabled,
+.bl-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.bl-danger:hover:not(:disabled) {
+  background: #4a2626;
+  border-color: #6c3535;
+}
+
+/* Mỗi hàng chờ = 1 cột dọc, các cột xếp cạnh nhau từ trái sang. */
+.bl-cols {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 6px;
+  border: 1px solid #34343c;
+  border-radius: 7px;
+}
+
+.bl-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: none;
+  width: 58px;
+}
+
+.bl-col-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  font-size: 10px;
+  color: #8a8a95;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid #34343c;
+  padding-bottom: 3px;
+}
+
+.bl-col-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 216px;
+  overflow-y: auto;
+}
+
+.bl-col-meta {
+  font-size: 10px;
+  color: #6f6f7a;
+  font-variant-numeric: tabular-nums;
+}
+
+.bl-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: #1c1c22;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 6px;
+  padding: 3px 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.bl-chip:hover {
+  border-color: #5a5a6a;
+}
+
+.bl-chip.active {
+  border-color: #6f6fe0;
+  box-shadow: 0 0 0 1px #6f6fe0 inset;
+}
+
+.bl-chip-swatch {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+}
+
+.bl-chip-num {
+  flex: 1;
+  text-align: right;
+}
+
+.bl-chip-type {
+  font-size: 9px;
+  color: #e8c07a;
+}
+
+.bl-chip-missing,
+.bl-chip-orphan {
+  border-color: #6c3535;
+  color: #e88a8a;
+}
+
+.bl-add {
+  background: #2c2c34;
+  color: #cfcfd6;
+  border: 1px dashed #4a4a56;
+  border-radius: 6px;
+  padding: 2px 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bl-add:hover {
+  background: #35353f;
+  color: #fff;
+}
+
+.bl-orphans {
+  border: 1px solid #6c3535;
+  border-radius: 7px;
+  padding: 6px;
+}
+
+.bl-orphans-head {
+  font-size: 10px;
+  color: #e88a8a;
+  margin-bottom: 4px;
+}
+
+.bl-orphans-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.bl-orphans-chips .bl-chip {
+  width: 58px;
+}
+
+.bl-edit {
+  border: 1px solid #34343c;
+  border-radius: 7px;
+  padding: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.bl-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.bl-edit-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10px;
+  color: #8a8a95;
+  min-width: 0;
+}
+
+.bl-edit-grid input,
+.bl-edit-grid select {
+  min-width: 0;
+  background: #1c1c22;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.bl-edit-grid input.bl-bad {
+  border-color: #6c3535;
+}
+
+.bl-err {
+  font-size: 11px;
+  color: #e88a8a;
+}
+
+/* 16 màu vừa đúng 1 hàng trong khổ panel (16×16px + 15 khoảng 2px = 286px) — để tràn xuống dòng
+   thì ô cuối nằm trơ một mình, đọc như thể nó khác nhóm. */
+.bl-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.bl-swatches .swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid #3c3c46;
+  cursor: pointer;
+  padding: 0;
+}
+
+.bl-swatches .swatch.active {
+  border-color: #fff;
+  box-shadow: 0 0 0 1px #6f6fe0;
+}
+
+.bl-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.bl-edit-actions button {
+  background: #2c2c34;
+  color: #e8e8ec;
+  border: 1px solid #4a4a56;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bl-edit-actions button:hover {
+  background: #35353f;
+}
+
+.bl-spacer {
+  flex: 1;
+}
+
+/* ---- Thử giải + độ khó ---- */
+.bl-check-go {
+  background: #2c3a4a;
+  color: #e8e8ec;
+  border: 1px solid #46617c;
+  border-radius: 7px;
+  padding: 6px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bl-check-go:hover:not(:disabled) {
+  background: #35485c;
+}
+
+.bl-check-go:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.bl-check {
+  border-radius: 7px;
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.bl-check.ok {
+  background: #1d2a1f;
+  border: 1px solid #2f4a33;
+}
+
+.bl-check.bad {
+  background: #3a2020;
+  border: 1px solid #5c2c2c;
+}
+
+.bl-check-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.bl-check.ok .bl-check-head b {
+  color: #8fd79b;
+}
+
+.bl-check.bad .bl-check-head b {
+  color: #e88a8a;
+}
+
+.bl-check-head span {
+  font-size: 10px;
+  color: #8a8a95;
+  font-variant-numeric: tabular-nums;
+}
+
+.bl-check-why {
+  font-size: 11px;
+  color: #e8b0b0;
+  line-height: 1.45;
+}
+
+.bl-check-approx {
+  font-size: 10px;
+  color: #9a9aa5;
+  line-height: 1.4;
+}
+
+.bl-score {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+.bl-score-num {
+  font-size: 22px;
+  font-weight: 600;
+  color: #e8e8ec;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.bl-score-of {
+  font-size: 11px;
+  color: #7a7a85;
+}
+
+.bl-score-label {
+  font-size: 12px;
+  color: #cfcfd6;
+  margin-left: 4px;
+}
+
+.bl-score-enum {
+  font-size: 10px;
+  color: #8a8a95;
+  margin-left: auto;
+}
+
+.bl-score-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: #1c1c22;
+  overflow: hidden;
+}
+
+/* Màu theo mức điểm. Cố tình KHÔNG dùng gradient: thanh chỉ vẽ phần trái nên gradient bao nhiêu
+   cũng chỉ hiện ra khúc đầu — điểm 9/10 vẫn xanh lét, sai hẳn ý nghĩa. */
+.bl-score-bar i {
+  display: block;
+  height: 100%;
+  background: #4f9d5a;
+}
+
+.bl-score-bar.mid i {
+  background: #c9b13d;
+}
+
+.bl-score-bar.hi i {
+  background: #cc4b4b;
+}
+
+.bl-factors {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bl-factor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: #9a9aa5;
+  cursor: help;
+}
+
+.bl-factor-name {
+  width: 132px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bl-factor-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: #1c1c22;
+  overflow: hidden;
+}
+
+.bl-factor-bar i {
+  display: block;
+  height: 100%;
+  background: #6f6fe0;
+}
+
+.bl-apply-diff {
+  background: #2c2c34;
+  color: #e8e8ec;
+  border: 1px solid #4a4a56;
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.bl-apply-diff:hover {
+  background: #35353f;
+}
+
+.bl-warn {
+  font-size: 11px;
+  color: #e8c07a;
+  background: #3a2f1c;
+  border: 1px solid #5c4a24;
+  border-radius: 7px;
+  padding: 6px 8px;
+  line-height: 1.45;
+}
+
+.bl-warn ul {
+  margin: 0;
+  padding-left: 15px;
+}
+
 .toolbar .count {
   font-size: 12px;
   color: #9a9aa5;

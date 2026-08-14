@@ -3,11 +3,16 @@ import {
   DEFAULT_LEVEL_META,
   GAME_PALETTE,
   VoxelGrid,
+  autoShooters,
+  blockCountsByColor,
   fromJSON,
   gridBounds,
   gridFromLayers,
+  makeBlaster,
+  nextBlasterId,
   parseUnityAsset,
   toJSON,
+  type BlasterEntry,
   type LevelMeta,
   type Vec3,
   type Voxel,
@@ -75,6 +80,27 @@ interface EditorState {
   setRecenter: (recenter: boolean) => void;
   setCenterOverride: (v: Vec3 | null) => void;
   toggleShowCenter: () => void;
+
+  /**
+   * Phần shooter: pool súng phẳng + các hàng chờ. Giữ đúng dạng của `LevelData` (hàng chứa id, không
+   * chứa object) nên mọi hàm dưới đây phải tự lo cho hai thứ khớp nhau — một id trong `dockColumns`
+   * mà không có súng tương ứng là level lỗi bên Unity.
+   */
+  blasters: BlasterEntry[];
+  dockColumns: number[][];
+  /** Thêm/bớt hàng. Bớt hàng thì súng trong hàng bị bỏ dồn về hàng cuối còn lại. */
+  setDockRowCount: (n: number) => void;
+  /** Thêm 1 súng vào cuối hàng `row`, id tự cấp. Trả về id vừa tạo. */
+  addBlaster: (row: number, color: number, bulletCount: number) => number;
+  updateBlaster: (id: number, patch: Partial<BlasterEntry>) => void;
+  /** Đổi id (kèm mọi chỗ đang nhắc tới nó). Trả về false nếu id mới không dùng được. */
+  changeBlasterId: (id: number, newId: number) => boolean;
+  removeBlaster: (id: number) => void;
+  /** Dời súng sang hàng khác / đổi vị trí trong hàng. `index` âm hoặc quá dài = về cuối hàng. */
+  moveBlaster: (id: number, row: number, index: number) => void;
+  /** Sinh sẵn bộ súng khớp số khối từng màu, ghi đè bộ đang có. */
+  autoBuildShooters: (rowCount: number, bulletsPerBlaster: number) => void;
+  clearShooters: () => void;
 
   setColor: (color: string) => void;
   toggleColorFilter: (color: string) => void;
@@ -145,6 +171,99 @@ export const useEditor = create<EditorState>((set, get) => ({
   setRecenter: (recenter) => set({ recenter }),
   setCenterOverride: (centerOverride) => set({ centerOverride }),
   toggleShowCenter: () => set((s) => ({ showCenter: !s.showCenter })),
+
+  blasters: [],
+  dockColumns: [],
+
+  setDockRowCount: (n) =>
+    set((s) => {
+      const want = Math.max(0, Math.min(20, Math.floor(n)));
+      if (want === s.dockColumns.length) return {};
+      if (want > s.dockColumns.length) {
+        const added = Array.from({ length: want - s.dockColumns.length }, () => [] as number[]);
+        return { dockColumns: [...s.dockColumns, ...added] };
+      }
+      // Bớt hàng: dồn súng của các hàng bị cắt về hàng cuối còn lại, chứ không xoá — mất súng lặng
+      // lẽ thì tổng đạn không còn khớp số khối mà chẳng ai thấy vì sao.
+      const kept = s.dockColumns.slice(0, want).map((c) => [...c]);
+      const spill = s.dockColumns.slice(want).flat();
+      if (spill.length) {
+        if (kept.length) kept[kept.length - 1].push(...spill);
+        else kept.push(spill);
+      }
+      return { dockColumns: kept };
+    }),
+
+  addBlaster: (row, color, bulletCount) => {
+    const id = nextBlasterId(get().blasters);
+    set((s) => {
+      const dockColumns = s.dockColumns.length ? s.dockColumns.map((c) => [...c]) : [[]];
+      const target = Math.max(0, Math.min(dockColumns.length - 1, row));
+      dockColumns[target].push(id);
+      return {
+        blasters: [...s.blasters, makeBlaster({ id, color, bulletCount })],
+        dockColumns,
+      };
+    });
+    return id;
+  },
+
+  updateBlaster: (id, patch) =>
+    set((s) => ({
+      blasters: s.blasters.map((b) => (b.id === id ? { ...b, ...patch, id: b.id } : b)),
+    })),
+
+  changeBlasterId: (id, newId) => {
+    const { blasters } = get();
+    if (!Number.isInteger(newId) || newId <= 0) return false;
+    if (newId !== id && blasters.some((b) => b.id === newId)) return false;
+    if (!blasters.some((b) => b.id === id)) return false;
+    if (newId === id) return true;
+    const swap = (ids: number[]) => ids.map((x) => (x === id ? newId : x));
+    set((s) => ({
+      blasters: s.blasters.map((b) => ({
+        ...b,
+        id: b.id === id ? newId : b.id,
+        connectedBlasterIds: swap(b.connectedBlasterIds),
+        chainedBlasterIds: swap(b.chainedBlasterIds),
+        innerBlasterIds: swap(b.innerBlasterIds),
+      })),
+      dockColumns: s.dockColumns.map(swap),
+    }));
+    return true;
+  },
+
+  removeBlaster: (id) =>
+    set((s) => ({
+      blasters: s.blasters
+        .filter((b) => b.id !== id)
+        .map((b) => ({
+          ...b,
+          connectedBlasterIds: b.connectedBlasterIds.filter((x) => x !== id),
+          chainedBlasterIds: b.chainedBlasterIds.filter((x) => x !== id),
+          innerBlasterIds: b.innerBlasterIds.filter((x) => x !== id),
+        })),
+      dockColumns: s.dockColumns.map((c) => c.filter((x) => x !== id)),
+    })),
+
+  moveBlaster: (id, row, index) =>
+    set((s) => {
+      if (!s.dockColumns.length) return {};
+      const dockColumns = s.dockColumns.map((c) => c.filter((x) => x !== id));
+      const target = Math.max(0, Math.min(dockColumns.length - 1, row));
+      const column = dockColumns[target];
+      const at = index < 0 || index > column.length ? column.length : index;
+      column.splice(at, 0, id);
+      return { dockColumns };
+    }),
+
+  autoBuildShooters: (rowCount, bulletsPerBlaster) => {
+    const { grid } = get();
+    const setup = autoShooters(blockCountsByColor(grid), { rowCount, bulletsPerBlaster });
+    set({ blasters: setup.blasters, dockColumns: setup.dockColumns });
+  },
+
+  clearShooters: () => set({ blasters: [], dockColumns: [] }),
 
   setColor: (color) => set({ color }),
 
@@ -292,8 +411,16 @@ export const useEditor = create<EditorState>((set, get) => ({
   clear: () => {
     const { grid } = get();
     grid.clear();
-    // Scene trống -> tâm về tự động (sẽ nằm trên sàn tại gốc).
-    set({ version: get().version + 1, undoStack: [], redoStack: [], centerOverride: null });
+    // Scene trống -> tâm về tự động (sẽ nằm trên sàn tại gốc). Súng cũng đi theo: số đạn của chúng
+    // được chia theo đúng số khối vừa bị xoá nên giữ lại là giữ lại một bộ sai.
+    set({
+      version: get().version + 1,
+      undoStack: [],
+      redoStack: [],
+      centerOverride: null,
+      blasters: [],
+      dockColumns: [],
+    });
   },
 
   importUnityAsset: (text) => {
@@ -321,6 +448,8 @@ export const useEditor = create<EditorState>((set, get) => ({
       depthOverrides,
       recenter: true,
       centerOverride,
+      blasters: parsed.shooters.blasters,
+      dockColumns: parsed.shooters.dockColumns,
       version: get().version + 1,
       undoStack: [],
       redoStack: [],
@@ -330,9 +459,19 @@ export const useEditor = create<EditorState>((set, get) => ({
 }));
 
 // ---------- Auto-save (localStorage) ----------
+// Khối và súng nằm chung một bản ghi `LevelData`: hai thứ này phải khớp nhau (số đạn chia theo đúng
+// số khối), nên lưu tách hai chỗ là mở đường cho việc một bên ghi được, một bên không.
 try {
   const saved = localStorage.getItem(AUTOSAVE_KEY);
-  if (saved) useEditor.setState({ grid: fromJSON(saved), version: 1 });
+  if (saved) {
+    const { grid, shooters } = fromJSON(saved);
+    useEditor.setState({
+      grid,
+      version: 1,
+      blasters: shooters.blasters,
+      dockColumns: shooters.dockColumns,
+    });
+  }
 } catch {
   // dữ liệu hỏng -> bỏ qua, bắt đầu level trống
 }
@@ -350,6 +489,21 @@ try {
       centerOverride: parsed.centerOverride ?? null,
       showCenter: parsed.showCenter ?? true,
     });
+    // Bản trước lưu súng ở key này. Chỉ nhận khi bản ghi level ở trên chưa có súng nào, để không
+    // xoá mất thứ vừa đọc được.
+    if (parsed.blasters) {
+      const { blasters: legacy, dockColumns: legacyColumns, ...withoutShooters } = parsed;
+      if (!useEditor.getState().blasters.length && legacy.length) {
+        useEditor.setState({ blasters: legacy, dockColumns: legacyColumns ?? [] });
+      }
+      // Và dọn ngay khỏi key cũ: để lại thì lần nào người dùng xoá hết súng, bản cũ này cũng sống
+      // lại ở lần mở sau (autosave lúc đó không có súng nên nhánh trên lại chạy).
+      try {
+        localStorage.setItem(META_KEY, JSON.stringify(withoutShooters));
+      } catch {
+        // bỏ qua
+      }
+    }
   }
 } catch {
   // hỏng -> dùng mặc định
@@ -357,11 +511,22 @@ try {
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 useEditor.subscribe((s, prev) => {
-  if (s.version === prev.version) return;
+  // Sửa súng KHÔNG đụng tới `version` (version chỉ đếm thay đổi trên grid), nên phải so cả hai —
+  // chỉ nghe `version` thì thêm/xoá súng sẽ không được lưu.
+  if (
+    s.version === prev.version &&
+    s.blasters === prev.blasters &&
+    s.dockColumns === prev.dockColumns
+  ) {
+    return;
+  }
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
-      localStorage.setItem(AUTOSAVE_KEY, toJSON(s.grid, false));
+      localStorage.setItem(
+        AUTOSAVE_KEY,
+        toJSON(s.grid, { blasters: s.blasters, dockColumns: s.dockColumns }, false),
+      );
     } catch {
       // localStorage đầy -> đành bỏ qua
     }
@@ -379,6 +544,7 @@ useEditor.subscribe((s, prev) => {
     return;
   }
   try {
+    // Súng không còn ở đây nữa — chúng nằm cùng khối trong AUTOSAVE_KEY.
     localStorage.setItem(
       META_KEY,
       JSON.stringify({

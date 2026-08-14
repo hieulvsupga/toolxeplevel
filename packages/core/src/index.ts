@@ -4,4 +4,6 @@ export * from './serializer';
 export * from './render';
 export * from './gameColors';
 export * from './layers';
+export * from './blasters';
 export * from './unityAsset';
+export * from './solve';

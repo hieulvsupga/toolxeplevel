@@ -5,6 +5,7 @@ import { ImportImagePanel } from './ImportImagePanel';
 import { ImportModelPanel } from './ImportModelPanel';
 import { LayerPaintPanel } from './LayerPaintPanel';
 import { ExportUnityPanel } from './ExportUnityPanel';
+import { BlasterPanel } from './BlasterPanel';
 
 export function Toolbar() {
   const color = useEditor((s) => s.color);
@@ -21,6 +22,7 @@ export function Toolbar() {
   const canUndo = useEditor((s) => s.undoStack.length > 0);
   const canRedo = useEditor((s) => s.redoStack.length > 0);
   const count = useEditor((s) => s.grid.size);
+  const blasterCount = useEditor((s) => s.blasters.length);
   const importUnityAsset = useEditor((s) => s.importUnityAsset);
 
   const fileRef = useRef<HTMLInputElement>(null);
@@ -32,6 +34,7 @@ export function Toolbar() {
   const [modelFile, setModelFile] = useState<File | null>(null);
   const [layerOpen, setLayerOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [blasterOpen, setBlasterOpen] = useState(false);
 
   // Click ra ngoài vùng bảng màu -> đóng popup.
   useEffect(() => {
@@ -160,6 +163,17 @@ export function Toolbar() {
         </button>
       </div>
 
+      {/* Súng bắn + hàng chờ */}
+      <div className="tb-group">
+        <button
+          className={blasterOpen ? 'active' : ''}
+          onClick={() => setBlasterOpen((o) => !o)}
+          title="Xếp súng bắn theo hàng, khớp số đạn với số khối từng màu"
+        >
+          🔫 Blaster{blasterCount ? ` (${blasterCount})` : ''}
+        </button>
+      </div>
+
       {/* File */}
       <div className="tb-group">
         <button
@@ -214,6 +228,7 @@ export function Toolbar() {
         <ImportModelPanel initialFile={modelFile} onClose={() => setModelFile(null)} />
       )}
       {layerOpen && <LayerPaintPanel onClose={() => setLayerOpen(false)} />}
+      {blasterOpen && <BlasterPanel onClose={() => setBlasterOpen(false)} />}
       {exportOpen && <ExportUnityPanel onClose={() => setExportOpen(false)} />}
       <input
         ref={fileRef}
