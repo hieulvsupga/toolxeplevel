@@ -8,6 +8,7 @@ import { HoverPreview } from './HoverPreview';
 import { RegionPreview } from './RegionPreview';
 import { DragFill } from './DragFill';
 import { CameraRig } from './CameraRig';
+import { CenterGizmo } from './CenterGizmo';
 import { useHoverBlock } from './hoverStore';
 
 export function EditorScene() {
@@ -50,6 +51,7 @@ export function EditorScene() {
         <HoverPreview cell={hover} />
         <RegionPreview />
         <DragFill />
+        <CenterGizmo />
         <CameraRig />
         {/* Gizmo góc màn hình: click mặt để nhìn theo trục đó */}
         <GizmoHelper alignment="bottom-right" margin={[72, 72]}>

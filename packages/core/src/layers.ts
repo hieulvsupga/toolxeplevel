@@ -19,6 +19,11 @@ export interface BuildLayersOptions {
    * -5..5), và các trường `voxelizedObject*Position` bên Unity đều tính theo tâm đó.
    */
   recenter?: boolean;
+  /**
+   * Tâm do người dùng đặt tay (thay cho tâm hộp bao tự động). null/không có = tự động.
+   * Chỉ có tác dụng khi `recenter` bật.
+   */
+  centerOverride?: Vec3 | null;
 }
 
 export interface ApproximatedColor {
@@ -118,8 +123,17 @@ export function gridBounds(grid: VoxelGrid): { min: Vec3; max: Vec3 } | null {
  * Lượng phải trừ khỏi toạ độ để khối nằm giữa gốc — nguồn duy nhất cho phép dời tâm, để HUD toạ
  * độ và file xuất ra không bao giờ nói hai con số khác nhau về cùng một khối.
  */
-export function recenterOffset(grid: VoxelGrid, recenter: boolean): Vec3 {
-  const bounds = recenter ? gridBounds(grid) : null;
+export function recenterOffset(
+  grid: VoxelGrid,
+  recenter: boolean,
+  override?: Vec3 | null,
+): Vec3 {
+  if (!recenter) return { x: 0, y: 0, z: 0 };
+  // Tâm đặt tay: làm tròn để toạ độ trong file .asset vẫn nguyên.
+  if (override) {
+    return { x: Math.round(override.x), y: Math.round(override.y), z: Math.round(override.z) };
+  }
+  const bounds = gridBounds(grid);
   if (!bounds) return { x: 0, y: 0, z: 0 };
   return {
     x: Math.round((bounds.min.x + bounds.max.x) / 2),
@@ -139,7 +153,7 @@ export function buildLayers(
   grid: VoxelGrid,
   options: BuildLayersOptions = {},
 ): BuildLayersResult {
-  const { recenter = true } = options;
+  const { recenter = true, centerOverride = null } = options;
   const depths = computeDepths(grid);
 
   const approximated = new Map<string, ApproximatedColor>();
@@ -170,7 +184,7 @@ export function buildLayers(
     };
   }
 
-  const offset = recenterOffset(grid, recenter);
+  const offset = recenterOffset(grid, recenter, centerOverride);
   for (const entry of entries) {
     entry.pos = {
       x: entry.pos.x - offset.x,

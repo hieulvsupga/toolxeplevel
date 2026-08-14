@@ -5,6 +5,7 @@ import { DragHint } from './components/DragHint';
 import { ColorLegend } from './components/ColorLegend';
 import { CoordHud } from './components/CoordHud';
 import { LayerListPanel } from './components/LayerListPanel';
+import { CenterPanel } from './components/CenterPanel';
 import { useEditor } from './store';
 
 export function App() {
@@ -46,6 +47,7 @@ export function App() {
       <CoordHud />
       <LayerListPanel />
       <ColorLegend />
+      <CenterPanel />
       <DragHint />
       <div className="hint">
         <b>Chuột trái</b>: đặt/kéo khối ngang, <b>+Ctrl</b>: nâng/hạ chiều cao &nbsp;•&nbsp;

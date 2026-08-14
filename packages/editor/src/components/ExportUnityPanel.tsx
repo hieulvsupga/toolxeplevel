@@ -56,11 +56,12 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
   const setDepthOverrides = useEditor((s) => s.setDepthOverrides);
   const recenter = useEditor((s) => s.recenter);
   const setRecenter = useEditor((s) => s.setRecenter);
+  const centerOverride = useEditor((s) => s.centerOverride);
 
   const built = useMemo(
-    () => buildLayers(grid, { recenter }),
+    () => buildLayers(grid, { recenter, centerOverride }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [grid, version, recenter],
+    [grid, version, recenter, centerOverride],
   );
 
   // Áp depth ép tay rồi sắp lại. Mỗi dòng giữ luôn `autoKey` (depth tự động gốc) vì sắp lại làm

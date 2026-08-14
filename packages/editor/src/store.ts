@@ -4,10 +4,12 @@ import {
   GAME_PALETTE,
   VoxelGrid,
   fromJSON,
+  gridBounds,
   gridFromLayers,
   parseUnityAsset,
   toJSON,
   type LevelMeta,
+  type Vec3,
   type Voxel,
 } from '@voxel/core';
 
@@ -64,9 +66,15 @@ interface EditorState {
   depthOverrides: Record<string, number>;
   /** Dời khối về giữa gốc toạ độ lúc xuất. Xem `buildLayers`. */
   recenter: boolean;
+  /** Tâm (gốc toạ độ) do người dùng đặt tay; null = tự động theo tâm hộp bao. */
+  centerOverride: Vec3 | null;
+  /** Hiện marker gốc toạ độ trong scene. */
+  showCenter: boolean;
   setLevelMeta: (meta: LevelMeta) => void;
   setDepthOverrides: (overrides: Record<string, number>) => void;
   setRecenter: (recenter: boolean) => void;
+  setCenterOverride: (v: Vec3 | null) => void;
+  toggleShowCenter: () => void;
 
   setColor: (color: string) => void;
   toggleColorFilter: (color: string) => void;
@@ -130,9 +138,13 @@ export const useEditor = create<EditorState>((set, get) => ({
   levelMeta: DEFAULT_LEVEL_META,
   depthOverrides: {},
   recenter: true,
+  centerOverride: null,
+  showCenter: true,
   setLevelMeta: (levelMeta) => set({ levelMeta }),
   setDepthOverrides: (depthOverrides) => set({ depthOverrides }),
   setRecenter: (recenter) => set({ recenter }),
+  setCenterOverride: (centerOverride) => set({ centerOverride }),
+  toggleShowCenter: () => set((s) => ({ showCenter: !s.showCenter })),
 
   setColor: (color) => set({ color }),
 
@@ -280,19 +292,35 @@ export const useEditor = create<EditorState>((set, get) => ({
   clear: () => {
     const { grid } = get();
     grid.clear();
-    set({ version: get().version + 1, undoStack: [], redoStack: [] });
+    // Scene trống -> tâm về tự động (sẽ nằm trên sàn tại gốc).
+    set({ version: get().version + 1, undoStack: [], redoStack: [], centerOverride: null });
   },
 
   importUnityAsset: (text) => {
     const parsed = parseUnityAsset(text);
-    const { grid, depthOverrides, warnings } = gridFromLayers(parsed.layers);
+    const { grid: raw, depthOverrides, warnings } = gridFromLayers(parsed.layers);
+
+    // File Unity đặt khối quanh gốc (có z âm). Editor thì coi z=0 là mặt sàn và khối phải ĐỨNG
+    // trên sàn, nên nâng cả khối lên cho khối thấp nhất chạm sàn (min z = 0). Đặt center = đúng
+    // lượng vừa nâng, để lúc xuất trừ center đi là ra lại toạ độ y hệt file gốc.
+    const bounds = gridBounds(raw);
+    let grid = raw;
+    let centerOverride: Vec3 | null = null;
+    if (bounds) {
+      const dz = -bounds.min.z; // dời z để khối thấp nhất về 0
+      if (dz !== 0) {
+        grid = new VoxelGrid();
+        for (const { x, y, z, voxel } of raw.entries()) grid.set(x, y, z + dz, { ...voxel });
+      }
+      centerOverride = { x: 0, y: 0, z: dz };
+    }
+
     set({
       grid,
       levelMeta: parsed.meta,
       depthOverrides,
-      // Khối trong file đã nằm đúng chỗ designer đặt; dời tâm lúc xuất lại sẽ lặng lẽ đẩy toạ độ
-      // đi chỗ khác so với file gốc.
-      recenter: false,
+      recenter: true,
+      centerOverride,
       version: get().version + 1,
       undoStack: [],
       redoStack: [],
@@ -319,6 +347,8 @@ try {
       levelMeta: { ...DEFAULT_LEVEL_META, ...parsed.levelMeta },
       depthOverrides: parsed.depthOverrides ?? {},
       recenter: parsed.recenter ?? true,
+      centerOverride: parsed.centerOverride ?? null,
+      showCenter: parsed.showCenter ?? true,
     });
   }
 } catch {
@@ -342,7 +372,9 @@ useEditor.subscribe((s, prev) => {
   if (
     s.levelMeta === prev.levelMeta &&
     s.depthOverrides === prev.depthOverrides &&
-    s.recenter === prev.recenter
+    s.recenter === prev.recenter &&
+    s.centerOverride === prev.centerOverride &&
+    s.showCenter === prev.showCenter
   ) {
     return;
   }
@@ -353,6 +385,8 @@ useEditor.subscribe((s, prev) => {
         levelMeta: s.levelMeta,
         depthOverrides: s.depthOverrides,
         recenter: s.recenter,
+        centerOverride: s.centerOverride,
+        showCenter: s.showCenter,
       }),
     );
   } catch {

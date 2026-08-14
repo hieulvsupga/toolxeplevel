@@ -15,15 +15,16 @@ export function CoordHud() {
   const grid = useEditor((s) => s.grid);
   const version = useEditor((s) => s.version);
   const recenter = useEditor((s) => s.recenter);
+  const centerOverride = useEditor((s) => s.centerOverride);
 
   const hovering = block !== null;
 
   // Cả hai đại lượng dưới đây phải quét toàn grid. Chỉ tính khi chuột thật sự đang ở trên khối —
   // `hovering` chỉ đổi lúc vào/ra khỏi mô hình, nên rê chuột trên bề mặt không tính lại lần nào.
   const offset = useMemo(
-    () => (hovering ? recenterOffset(grid, recenter) : null),
+    () => (hovering ? recenterOffset(grid, recenter, centerOverride) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [grid, version, recenter, hovering],
+    [grid, version, recenter, centerOverride, hovering],
   );
   const depths = useMemo(
     () => (hovering ? computeDepths(grid) : null),
