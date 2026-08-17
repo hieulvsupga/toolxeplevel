@@ -40,7 +40,10 @@ export const DEFAULT_LEVEL_META: LevelMeta = {
   shouldLoop: false,
   shouldOfferMeteorShower: true,
   rootPosition: { x: 0, y: -5, z: 2.5 },
-  rootLocalEulerAngles: { x: 65, y: 0, z: 45 },
+  // Khối dựng thẳng, nhìn chính diện (x=90 là mức dựng đứng hoàn toàn — xem RootRotationPreview).
+  // Các level mẫu trong DataExample dùng 65/0/45 (ngả ra xa 25°, xoay chéo 45°), nhưng mặc định của
+  // tool lấy góc chính diện để khối vừa dựng ra là nhìn đúng mặt trước.
+  rootLocalEulerAngles: { x: 90, y: 0, z: 0 },
   voxelizedObjectCenterPosition: { x: 0, y: 0, z: 0 },
   voxelizedObjectShadowPosition: { x: -0.02, y: -12.5, z: 4 },
   voxelizedObjectScale: 1,

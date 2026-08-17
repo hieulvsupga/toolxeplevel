@@ -2547,3 +2547,86 @@ body,
   padding: 2px 9px;
   white-space: nowrap;
 }
+
+/* ---- Xuất .asset: hai cột form + xem trước hướng khối ---- */
+.ex-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.ex-form {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Dính lại khi cuộn form: chọn góc mà phải cuộn lên xuống tìm khung xem trước thì vô nghĩa.
+   `.modal` là phần tử cuộn nên sticky bám theo nó. */
+.ex-preview {
+  width: 250px;
+  flex: none;
+  position: sticky;
+  top: 0;
+}
+
+.ex-preview .ex-section {
+  margin-top: 0;
+}
+
+.ex-preview-box {
+  height: 250px;
+  border: 1px solid #34343c;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #15151a;
+  /* Kéo để xoay khối, nên đừng để chuột quét chọn chữ hay kéo-thả ảnh. */
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.ex-preview-box:active {
+  cursor: grabbing;
+}
+
+.ex-preview-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #7a7a85;
+}
+
+.ex-preview-nums {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 7px;
+  font-size: 11px;
+  color: #8a8a95;
+}
+
+.ex-preview-nums b {
+  color: #e8e8ec;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-preview-reset {
+  width: 100%;
+  margin-top: 6px;
+  background: #2c2c34;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 6px;
+  padding: 5px 7px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ex-preview-reset:hover {
+  background: #38384280;
+  border-color: #55555f;
+}

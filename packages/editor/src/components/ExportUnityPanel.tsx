@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  DEFAULT_LEVEL_META,
   MAX_DOCK_COUNT,
   WALL_COLOR_ID,
   blockCountsByColorFromLayers,
@@ -12,6 +13,7 @@ import {
   type Vec3,
 } from '@voxel/core';
 import { useEditor } from '../store';
+import { RootRotationPreview } from './RootRotationPreview';
 
 interface ExportUnityPanelProps {
   onClose: () => void;
@@ -89,6 +91,7 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
   const set = <K extends keyof LevelMeta>(key: K, value: LevelMeta[K]) =>
     setMeta({ ...meta, [key]: value });
 
+
   // Kiểm phần súng ngay tại đây thay vì chỉ trong bảng Blaster: file xuất ra mà đạn không khớp số
   // khối thì màn không thắng được, và lỗi đó chỉ lộ ra khi chơi thử trong Unity.
   const shooterProblems = useMemo(
@@ -132,6 +135,10 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
             ✕
           </button>
         </div>
+
+        {/* Hai cột: form bên trái, xem trước hướng khối bên phải (dính lại khi cuộn form). */}
+        <div className="ex-body">
+        <div className="ex-form">
 
         <div className="ex-summary">
           {built.voxelCount} khối · {layers.length} layer · depth 0…{built.maxDepth} · kích thước{' '}
@@ -302,6 +309,46 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
               </div>
             );
           })}
+        </div>
+
+        </div>
+
+        <div className="ex-preview">
+          <div className="ex-section">Hướng khối trong game</div>
+          <RootRotationPreview
+            layers={layers}
+            euler={meta.rootLocalEulerAngles}
+            onChange={(v) => set('rootLocalEulerAngles', v)}
+          />
+          <div className="ex-preview-nums">
+            <span>rootLocalEulerAngles</span>
+            <b>
+              {meta.rootLocalEulerAngles.x} / {meta.rootLocalEulerAngles.y} /{' '}
+              {meta.rootLocalEulerAngles.z}
+            </b>
+          </div>
+          {/* Nhãn đọc thẳng từ DEFAULT_LEVEL_META, khỏi phải sửa hai chỗ khi đổi góc mặc định. */}
+          <button
+            className="ex-preview-reset"
+            onClick={() => set('rootLocalEulerAngles', DEFAULT_LEVEL_META.rootLocalEulerAngles)}
+            title="Về góc mặc định của tool (khối dựng thẳng, nhìn chính diện)"
+          >
+            ↺ Mặc định {DEFAULT_LEVEL_META.rootLocalEulerAngles.x} /{' '}
+            {DEFAULT_LEVEL_META.rootLocalEulerAngles.y} /{' '}
+            {DEFAULT_LEVEL_META.rootLocalEulerAngles.z}
+          </button>
+          <div className="ex-note">
+            Kéo trong khung: <b>ngang</b> = xoay quanh trục đứng của khối, <b>dọc</b> = ngả
+            trước/sau, <b>Shift + ngang</b> = góc Y. Camera đứng yên và khối quay — đúng như trong
+            game, nơi chỉ transform gốc của level mang ba góc này (camera game ở
+            <b> 0/0/-10</b>, rotation <b>0</b>, không nghiêng).
+            <br />
+            Khung này luôn lùi đủ xa để thấy trọn khối và cỡ hình không đổi khi xoay, nên so được
+            góc nào đẹp hơn. <b>rootPosition</b> và <b>objectScale</b> không áp vào đây: chúng chỉ
+            dịch/phóng khối trong scene game chứ không đổi hướng.
+          </div>
+        </div>
+
         </div>
 
         <button className="ex-go" onClick={handleExport} disabled={!built.voxelCount}>

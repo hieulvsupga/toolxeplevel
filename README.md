@@ -53,6 +53,37 @@ Việc này KHÔNG ảnh hưởng `npm run dev` — vẫn test qua localhost nh�
 - **Bảng màu bên phải**: liệt kê màu đang dùng + số block mỗi màu; click để lọc chỉ hiện
   block màu đó (chọn nhiều màu) — [ColorLegend.tsx](packages/editor/src/components/ColorLegend.tsx)
 
+## Chọn hướng khối cho game (bảng Xuất .asset)
+
+Cột phải của bảng Xuất là khung xem trước 3D
+([RootRotationPreview.tsx](packages/editor/src/components/RootRotationPreview.tsx)): **camera đứng
+yên, KHỐI quay** — đúng như trong game, nơi chỉ transform gốc của level mang
+`rootLocalEulerAngles`. Kéo chuột trong khung là sửa thẳng ba góc đó (ngang = xoay quanh trục đứng
+của khối, dọc = ngả trước/sau, Shift + ngang = góc Y).
+
+Quy đổi góc Unity sang three.js không thể nhét thẳng ba số, vì Unity thuận trái (Z hướng vào trong)
+và quay theo thứ tự Z→X→Y. Qua phép soi gương `M: (x,y,z) → (x,y,−z)`:
+
+```
+ma trận Unity = RY(y)·RX(x)·RZ(z)   (quay thuận trái = quay thuận phải với góc đổi dấu)
+M·(…)·M       = RY(+y)·RX(+x)·RZ(−z)  theo chiều thuận phải  =  THREE.Euler(x, y, −z, 'YXZ')
+```
+
+Vị trí khối cũng phải soi gương theo (z đổi dấu), không thì hình bị lộn so với game. Tự kiểm bằng số:
+`(0,0,0)` → khối nằm ngửa (trục đứng chỉ vào màn hình); `(90,0,0)` → dựng thẳng, nhìn chính diện —
+**đây là góc mặc định của tool**; `(65,0,45)` → dựng đứng, ngả ra xa 25°, xoay chéo 45° (góc các level
+mẫu trong DataExample dùng).
+
+**Camera game** (đo từ Transform camera trong Unity): `position (0, 0, -10)`, `rotation (0, 0, 0)` —
+nhìn thẳng dọc +Z, KHÔNG nghiêng. Soi gương z thì thành camera three.js ở `(0, 0, +10)` nhìn dọc −Z,
+đúng hướng mặc định, nên preview cùng hướng nhìn với game.
+
+Khung preview thì **lùi xa hơn camera game và dùng fov 30° thay vì 60°**, có chủ ý: việc ở đây là căn
+hướng, nên phải thấy trọn khối và thấy đúng hình dáng (fov rộng làm méo phối cảnh, cạnh gần phình ra).
+Khoảng cách tính từ bán kính khối quanh gốc quay nên **cỡ hình không đổi khi xoay** — có vậy mới so
+được góc nào đẹp hơn. `rootPosition` và `objectScale` cố tình không áp vào: chúng chỉ dịch/phóng khối
+trong scene game chứ không đổi hướng, áp vào là khối lệch khỏi khung.
+
 ## Luật khoang chờ (thứ mọi phép kiểm dựa vào)
 
 Chép ra đây vì đây là phần dễ mô phỏng sai nhất, mà sai thì tool báo "màn ổn" cho một màn
