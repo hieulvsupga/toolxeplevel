@@ -432,8 +432,9 @@ body,
   top: 56px;
   right: 104px;
   z-index: 45;
-  width: 340px;
-  max-width: calc(100vw - 24px);
+  width: 510px;
+  /* Trừ cả khoảng 104px chừa bên phải, không thì ở cửa sổ hẹp panel tràn qua mép trái. */
+  max-width: calc(100vw - 128px);
   max-height: calc(100vh - 72px);
   display: flex;
   flex-direction: column;
@@ -775,6 +776,118 @@ body,
   color: #e8c07a;
 }
 
+/* Ô màu thứ hai của súng Double: dán sát ô màu 1, bo góc ngược lại để đọc ra "màu 1 rồi màu 2". */
+.bl-chip-swatch2 {
+  width: 8px;
+  height: 10px;
+  flex: none;
+  margin-left: -3px;
+  border-radius: 0 3px 3px 0;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  border-left: none;
+}
+
+.bl-swatches-2 {
+  margin-top: -4px;
+}
+
+.bl-second-off {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid #3c3c46;
+  background: #1c1c22;
+  color: #8a8a95;
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.bl-second-off.active {
+  border-color: #fff;
+  color: #e8e8ec;
+}
+
+.bl-mini-swatches {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  /* Đủ cho cả 16 ô trên một dòng ở khổ panel mới (16×13 + 15×2 = 238px). */
+  max-width: 250px;
+}
+
+.bl-mini-swatches .swatch {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  border: 1px solid #3c3c46;
+  cursor: pointer;
+  padding: 0;
+}
+
+.bl-mini-swatches .swatch.active {
+  border-color: #fff;
+  box-shadow: 0 0 0 1px #6f6fe0;
+}
+
+.bl-chip-ice {
+  font-size: 8px;
+  color: #9fd8ea;
+  white-space: nowrap;
+}
+
+/* Súng giấu màu: vẫn thấy màu thật (đang dựng level) nhưng phủ vân gạch cho biết trong game màu
+   này bị che. Làm bằng vân chứ không phải huy hiệu riêng vì chip chỉ rộng 58px. */
+/* Vân để hở: nửa số vạch trong suốt nên vẫn đọc được đúng hue của màu thật, chỉ trông như bị che.
+   Phủ kín bằng vạch đục cả hai bên thì màu bị bạc hết, mất luôn cái mà người dựng level cần thấy. */
+.bl-swatch-hidden {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.55) 0,
+    rgba(0, 0, 0, 0.55) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+  border-color: #e8e8ec;
+}
+
+.bl-edit-check {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 5px !important;
+  font-size: 11px !important;
+  color: #cfcfd6 !important;
+  cursor: pointer;
+  align-self: end;
+  padding-bottom: 4px;
+}
+
+/* Khẩu đang bọc băng: tông lạnh, thấy ngay là chưa bấm được. */
+.bl-chip-iced {
+  background: #1b2a33;
+  border-color: #3d6b80;
+}
+
+.bl-ice-amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+  color: #9fd3da;
+}
+
+.bl-ice-amount input {
+  width: 44px;
+  background: #1c1c22;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 5px;
+  padding: 2px 5px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .bl-chip-missing,
 .bl-chip-orphan {
   border-color: #6c3535;
@@ -1038,6 +1151,22 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
+/* Đẩy sát mép phải kể cả khi dòng thống kê bên cạnh không hiện (lúc không win được). */
+.bl-check-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #8a8a95;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 3px;
+  cursor: pointer;
+}
+
+.bl-check-close:hover {
+  color: #e8e8ec;
+}
+
 .bl-check-why {
   font-size: 11px;
   color: #e8b0b0;
@@ -1121,7 +1250,7 @@ body,
 }
 
 .bl-factor-name {
-  width: 132px;
+  width: 168px;
   flex: none;
   overflow: hidden;
   text-overflow: ellipsis;

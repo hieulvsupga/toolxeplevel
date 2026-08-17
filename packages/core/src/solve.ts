@@ -1,16 +1,27 @@
 import { VoxelGrid } from './VoxelGrid';
-import { BLASTER_TYPES, connectedGroups, type BlasterEntry } from './blasters';
+import {
+  BLASTER_TYPES,
+  BLASTER_TYPE_KEY,
+  BLASTER_TYPE_LOCK,
+  BLASTER_TYPE_NORMAL,
+  bulletCountsByColor,
+  connectedGroups,
+  type BlasterEntry,
+} from './blasters';
 import { WALL_COLOR_ID, gameColorById, matchGameColor } from './gameColors';
 
 /**
  * Thử chơi hộ một màn để biết nó có phá hết khối được hay không, và đo xem chơi nó khó tới mức nào.
  *
  * ---- Luật được mô phỏng ----
- * 1. Một khối bắn được khi nó *hở*: có ít nhất một trong 6 mặt không bị khối nào che. Đây đúng là
- *    luật "khối nó nhìn thấy, không bị che, có mặt hướng ra ngoài", và cũng là luật mà
- *    `computeDepths` dùng để tính `depth` — đã kiểm khớp 1331/1331 voxel với data gốc.
+ * 1. Một khối bắn được khi có ít nhất một mặt hở ra vùng khí THÔNG VỚI BÊN NGOÀI — đúng chữ "có mặt
+ *    hướng ra ngoài". Chỉ đếm "có ô trống bên cạnh" là chưa đủ: một khối nằm trong hốc rỗng kín
+ *    cũng có ô trống bên cạnh mà ngoài kia chẳng bắn vào được. Khác biệt này chỉ lộ ra khi có
+ *    tường quây thành hốc — đo trên cả 7 file DataExample thì hai cách tính ra y hệt nhau
+ *    (Banana 408, WallBox 488…), nên đổi sang cách chặt hơn không phá gì của data cũ.
  * 2. Khối tường (`ColorType.None`) không bao giờ bị phá và không tính vào điều kiện thắng, nhưng
- *    vẫn che các khối sau nó — nên một khối bị tường bọc kín là một màn không thắng được.
+ *    vẫn che các khối sau nó và vẫn chặn vùng khí — đó chính là công dụng của nó: bịt một hướng để
+ *    người chơi phải xoay sang góc khác. Khối bị tường quây kín thì không bao giờ bắn được.
  * 3. Mỗi hàng chờ chỉ với tới được súng ĐẦU hàng; súng đã rút ra thì nằm ở khoang chờ, tối đa
  *    `dockCount` súng cùng lúc.
  * 4. Súng bắn từng viên vào khối hở cùng màu. Hết đạn thì rời khoang, nhường chỗ.
@@ -19,11 +30,36 @@ import { WALL_COLOR_ID, gameColorById, matchGameColor } from './gameColors';
  *    thì mỗi súng bắn màu của riêng nó. Suy ra từ ConnectedBox.asset: cả 4 cặp đều là hai súng cùng
  *    một bậc ở hai hàng cạnh nhau, cùng số đạn, khác màu — tức là hai khẩu bị buộc vào nhau nên
  *    phải bay lên cùng lúc.
- * 6. Thua = khoang chờ đầy mà không súng nào trong đó còn khối hở cùng màu để bắn (tắc hàng), hoặc
- *    không rút nổi nhóm nào nữa (nhóm nối nhau mà chỗ trống không đủ).
+ * 6. Súng bọc băng (`iceHp` > 0) không bấm được. Mỗi LƯỢT BẤM (nhấc một khẩu — hoặc cả cặp nối
+ *    nhau — lên khoang) làm băng của MỌI khẩu còn băng tan 1; về 0 thì bấm được.
+ *    Khớp với IcedBlasterBox.asset: hai đầu hàng H1/H3 băng 10, mà H2 có đúng 12 khẩu để bấm trong
+ *    lúc chờ; khẩu băng 15 nằm ở bậc 11 của H2, tới lượt nó thì băng vừa kịp tan.
+ * 7. Ổ khoá (`BlasterType.Lock`) nằm ngay trong hàng và chưa mở thì không bấm được — mà hàng chỉ
+ *    rút được từ đầu, nên mọi khẩu xếp sau nó cũng kẹt theo. Chìa (`BlasterType.Key`) là một khẩu
+ *    bình thường, hễ được nhấc lên khoang là mở một ổ.
+ *    LƯU Ý: data KHÔNG lưu chìa nào mở ổ nào — cả 4 khẩu Key/Lock trong KeyLockBox.asset đều có
+ *    connected/chained/inner rỗng. Nên ở đây mô phỏng theo giả định yếu nhất mà data cho phép:
+ *    một chìa mở MỘT ổ bất kỳ còn khoá (chọn ổ ở hàng gần đầu nhất cho xác định). Nếu game ghép
+ *    cặp chìa–ổ theo luật riêng thì chỗ này phải sửa lại.
+ * 8. Thua = khoang chờ đầy mà không súng nào trong đó còn khối hở cùng màu để bắn (tắc hàng), hoặc
+ *    không rút nổi nhóm nào nữa (nhóm nối nhau thiếu chỗ, mọi đầu hàng đóng băng, hoặc còn ổ khoá
+ *    mà hết chìa).
+ *
+ * ---- Hidden: cố ý KHÔNG đưa vào luật thắng/thua ----
+ * `isHidden` chỉ giấu màu với NGƯỜI CHƠI, không đổi luật vật lý nào: vẫn bấm được, vẫn bắn đúng màu
+ * thật. Một màn giải được thì vẫn giải được, chỉ là người chơi phải mò. Nên nó không nằm ở
+ * `checkWinnable` (kết quả sẽ vẫn đúng) mà nằm ở thang độ khó — và kết quả thử giải có kèm lời nhắc
+ * rằng đây là mức chơi với thông tin đầy đủ, tức giới hạn TRÊN của người chơi thật.
+ *
+ * 9. Súng hai màu (`secondaryColor` khác None): mỗi màu MỘT túi đạn riêng, cùng bằng `bulletCount` —
+ *    `BlasterData` chỉ có đúng một trường đếm đạn, và chỉ cách hiểu này mới khớp số khối trong
+ *    DoubleBlasterBox.asset (mỗi màu 494 khối = tổng 494 đạn của 8 khẩu, dùng cho cả hai màu).
+ *    Phải bắn HẾT màu thứ nhất mới sang màu thứ hai — nên khẩu hai màu có thể nằm chờ trong khoang
+ *    dù màu phụ của nó đang có khối hở. Ngoại lệ: nếu màu thứ nhất đã sạch khối trên bàn thì số đạn
+ *    còn lại của nó thành đạn phí và khẩu chuyển sang màu thứ hai, chứ không kẹt vĩnh viễn.
  *
  * ---- Chỗ CHƯA mô phỏng (xem `ignoredMechanics` trong kết quả) ----
- * Các loại súng ngoài Normal (chìa/khoá, generator, búa…), `isHidden`, `iceHp`, `isChained` và các
+ * Các loại súng ngoài Normal (chìa/khoá, generator, búa…), `isChained` và các
  * danh sách chained/inner đều bị coi như súng thường. Súng hai màu thì có mô phỏng: mỗi màu một túi
  * đạn `bulletCount` riêng — cách tính duy nhất khớp được số khối trong DoubleBlasterBox.asset
  * (494 khối mỗi màu = 8 súng × ~62 đạn × 2 màu).
@@ -68,6 +104,11 @@ export interface SolveResult {
   policiesTried: number;
   /** Cơ chế bị bỏ qua khi mô phỏng — kết quả chỉ là gần đúng nếu danh sách này không rỗng. */
   ignoredMechanics: string[];
+  /**
+   * Số khẩu giấu màu. >0 nghĩa là lời giải này chơi với thông tin đầy đủ, còn người chơi thật phải
+   * mò — kết quả "win được" là giới hạn trên, không phải thứ ai cũng đạt được.
+   */
+  hiddenCount: number;
 }
 
 const NEIGHBORS_6: [number, number, number][] = [
@@ -113,70 +154,111 @@ interface SimState {
   /** Số khối màu còn lại theo màu — để biết một súng còn cơ hội bắn hay không. */
   remaining: Map<number, number>;
   blocksLeft: number;
+  /** Ô trống thông được ra ngoài. Hốc rỗng kín KHÔNG nằm trong này. */
+  outside: Set<string>;
+  /** Hộp bao đã nới 1 ô mỗi phía — giới hạn cho phép loang khí. */
+  lo: [number, number, number];
+  hi: [number, number, number];
 }
 
-function isExposed(occupied: Map<string, number>, x: number, y: number, z: number): boolean {
+/** Đánh dấu khối màu cạnh ô khí `airKey` là bắn được. */
+function markExposedAround(state: SimState, airKey: string): void {
+  const [x, y, z] = VoxelGrid.parseKey(airKey);
   for (const [dx, dy, dz] of NEIGHBORS_6) {
-    if (!occupied.has(VoxelGrid.key(x + dx, y + dy, z + dz))) return true;
+    const nk = VoxelGrid.key(x + dx, y + dy, z + dz);
+    const color = state.occupied.get(nk);
+    if (color === undefined || color === WALL_COLOR_ID) continue;
+    let set = state.exposed.get(color);
+    if (!set) {
+      set = new Set();
+      state.exposed.set(color, set);
+    }
+    set.add(nk);
   }
-  return false;
+}
+
+/**
+ * Loang vùng khí ngoài trời bắt đầu từ `seeds`, và đánh dấu mọi khối chạm vào vùng vừa loang.
+ *
+ * Vì khối chỉ mất đi chứ không mọc thêm, vùng khí ngoài chỉ phình ra — nên mỗi ô chỉ vào đây đúng
+ * một lần, cả ván cộng lại vẫn là O(số ô).
+ */
+function floodOutside(state: SimState, seeds: string[]): void {
+  const stack: string[] = [];
+  for (const seed of seeds) {
+    if (state.outside.has(seed) || state.occupied.has(seed)) continue;
+    state.outside.add(seed);
+    stack.push(seed);
+  }
+  while (stack.length) {
+    const key = stack.pop()!;
+    markExposedAround(state, key);
+    const [x, y, z] = VoxelGrid.parseKey(key);
+    for (const [dx, dy, dz] of NEIGHBORS_6) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const nz = z + dz;
+      if (nx < state.lo[0] || nx > state.hi[0]) continue;
+      if (ny < state.lo[1] || ny > state.hi[1]) continue;
+      if (nz < state.lo[2] || nz > state.hi[2]) continue;
+      const nk = VoxelGrid.key(nx, ny, nz);
+      if (state.outside.has(nk) || state.occupied.has(nk)) continue;
+      state.outside.add(nk);
+      stack.push(nk);
+    }
+  }
 }
 
 function buildState(grid: VoxelGrid): SimState {
   const occupied = new Map<string, number>();
+  const lo: [number, number, number] = [Infinity, Infinity, Infinity];
+  const hi: [number, number, number] = [-Infinity, -Infinity, -Infinity];
   for (const { x, y, z, voxel } of grid.entries()) {
     occupied.set(VoxelGrid.key(x, y, z), colorTypeOf(voxel.color));
+    lo[0] = Math.min(lo[0], x - 1);
+    lo[1] = Math.min(lo[1], y - 1);
+    lo[2] = Math.min(lo[2], z - 1);
+    hi[0] = Math.max(hi[0], x + 1);
+    hi[1] = Math.max(hi[1], y + 1);
+    hi[2] = Math.max(hi[2], z + 1);
   }
 
-  const exposed = new Map<number, Set<string>>();
   const remaining = new Map<number, number>();
   let blocksLeft = 0;
-  for (const [key, color] of occupied) {
+  for (const color of occupied.values()) {
     if (color === WALL_COLOR_ID) continue;
     blocksLeft++;
     remaining.set(color, (remaining.get(color) ?? 0) + 1);
-    const [x, y, z] = VoxelGrid.parseKey(key);
-    if (isExposed(occupied, x, y, z)) {
-      let set = exposed.get(color);
-      if (!set) {
-        set = new Set();
-        exposed.set(color, set);
-      }
-      set.add(key);
-    }
   }
-  return { occupied, exposed, remaining, blocksLeft };
+
+  const state: SimState = {
+    occupied,
+    exposed: new Map(),
+    remaining,
+    blocksLeft,
+    outside: new Set(),
+    lo,
+    hi,
+  };
+  if (occupied.size) {
+    // Góc ngoài cùng chắc chắn là khí ngoài trời (hộp bao đã nới thêm 1 ô).
+    floodOutside(state, [VoxelGrid.key(lo[0], lo[1], lo[2])]);
+  }
+  return state;
 }
 
 /**
- * Phá 1 khối. Trả về các khối vừa hở ra.
+ * Phá 1 khối: ô của nó thành khí, khí ngoài trời loang vào, khối nào vừa lộ mặt ra thì bắn được.
  *
- * Khối đã hở thì không bao giờ bị che lại (chỉ có khối bị bớt đi), nên tập khối hở chỉ phình ra —
- * nhờ vậy mô phỏng không cần tính lại toàn bộ bề mặt sau mỗi viên đạn.
+ * Chỉ phá khối đang hở nên ô vừa trống chắc chắn dính vùng khí ngoài — và nếu nó vừa chọc thủng một
+ * hốc kín thì cả hốc đó cũng thành khí ngoài trong cùng lượt loang này.
  */
-function destroy(state: SimState, key: string, color: number): string[] {
+function destroy(state: SimState, key: string, color: number): void {
   state.occupied.delete(key);
   state.exposed.get(color)?.delete(key);
   state.remaining.set(color, (state.remaining.get(color) ?? 1) - 1);
   state.blocksLeft--;
-
-  const revealed: string[] = [];
-  const [x, y, z] = VoxelGrid.parseKey(key);
-  for (const [dx, dy, dz] of NEIGHBORS_6) {
-    const nk = VoxelGrid.key(x + dx, y + dy, z + dz);
-    const nc = state.occupied.get(nk);
-    if (nc === undefined || nc === WALL_COLOR_ID) continue;
-    let set = state.exposed.get(nc);
-    if (!set) {
-      set = new Set();
-      state.exposed.set(nc, set);
-    }
-    if (!set.has(nk)) {
-      set.add(nk);
-      revealed.push(nk);
-    }
-  }
-  return revealed;
+  floodOutside(state, [key]);
 }
 
 /** Số mặt hở của một khối — dùng cho chiến lược shallow/deep. */
@@ -275,6 +357,26 @@ interface SimOutput {
   deadlocked: boolean;
   /** >0 = nghẽn vì một nhóm nối nhau cần nhiều chỗ hơn cả khoang chờ (số chỗ nhóm cần). */
   groupNeedsSlots: number;
+  /** Súng còn nằm trong khoang lúc dừng, kèm màu nó đang chờ khối hở. */
+  queueAtEnd: { id: number; colors: number[] }[];
+  /** Số súng chưa được rút khỏi các hàng lúc dừng. */
+  unpulled: number;
+  /**
+   * Nhóm nối nhau đang chặn đầu một hàng lúc dừng, kèm lý do không rút được:
+   *  gap      — hai khẩu cùng hàng nhưng có khẩu khác chen giữa (hỏng vĩnh viễn)
+   *  unplaced — một thành viên chưa được xếp vào hàng nào
+   *  slots    — nhóm đông hơn cả khoang chờ
+   *  deep     — thành viên còn nằm sâu trong một hàng khác
+   */
+  stuckGroups: { ids: number[]; why: 'gap' | 'unplaced' | 'slots' | 'deep' }[];
+  /** Đầu hàng còn đóng băng lúc dừng, kèm số băng còn lại. */
+  frozenHeads: { id: number; left: number }[];
+  /** Ổ khoá đang chặn đầu hàng lúc dừng. */
+  lockedHeads: number[];
+  /** Số chìa chưa dùng còn nằm đâu đó lúc dừng — hết chìa mà còn ổ là bế tắc vĩnh viễn. */
+  keysLeft: number;
+  /** Số hàng vẫn còn súng lúc dừng — so với `frozenHeads` để biết có phải kẹt vì băng hết không. */
+  columnsWithBlasters: number;
   /**
    * Trung bình tỉ lệ "súng đầu hàng bấm được ngay / số hàng còn súng", đo mỗi lần rút súng.
    *
@@ -306,9 +408,34 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
   const livePools = (q: Queued) =>
     q.pools.filter((p) => p.left > 0 && (state.remaining.get(p.color) ?? 0) > 0);
 
-  /** Túi bắn được NGAY: còn khối hở cùng màu. */
-  const firablePool = (q: Queued) =>
-    livePools(q).find((p) => (state.exposed.get(p.color)?.size ?? 0) > 0);
+  /**
+   * Túi ĐANG tới lượt. Súng hai màu phải bắn xong màu thứ nhất mới sang màu thứ hai, nên chỉ có túi
+   * đầu tiên còn dùng được là được bắn — `livePools` giữ nguyên thứ tự [màu chính, màu phụ].
+   *
+   * Túi màu thứ nhất mà hết khối trên bàn thì `livePools` tự loại nó, khẩu chuyển sang màu thứ hai
+   * (đạn thừa tính vào `wastedBullets`) — không thì nó kẹt vĩnh viễn vì một màu đã bị khẩu khác dọn
+   * sạch hộ.
+   */
+  const activePool = (q: Queued): Pool | undefined => livePools(q)[0];
+
+  /** Túi bắn được NGAY: đang tới lượt và còn khối hở cùng màu. */
+  const firablePool = (q: Queued) => {
+    const pool = activePool(q);
+    return pool && (state.exposed.get(pool.color)?.size ?? 0) > 0 ? pool : undefined;
+  };
+
+  // Băng còn lại của từng khẩu. Chỉ giảm khi có lượt bấm, nên nếu không bấm được gì nữa thì băng
+  // đứng yên vĩnh viễn — đó chính là kiểu tắc riêng của cơ chế này.
+  const ice = new Map<number, number>();
+  for (const blaster of input.blasters) {
+    if (blaster.iceHp > 0) ice.set(blaster.id, blaster.iceHp);
+  }
+
+  // Ổ khoá còn khoá. Mở dần mỗi khi nhấc được một khẩu Key lên khoang.
+  const locked = new Set<number>();
+  for (const blaster of input.blasters) {
+    if (blaster.type === BLASTER_TYPE_LOCK) locked.add(blaster.id);
+  }
 
   // Nhóm súng nối nhau: cả nhóm lên khoang một lượt.
   const groupOf = new Map<number, number[]>();
@@ -316,29 +443,61 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
     for (const id of group) groupOf.set(id, group);
   }
 
-  /** Súng đang ở đầu hàng nào không (chưa rút). */
-  const frontRowOf = (id: number) => {
+  /** Vị trí còn lại của một súng trong các hàng: [hàng, bậc], hoặc null nếu đã rút / chưa xếp. */
+  const pendingPosition = (id: number): [number, number] | null => {
     for (let i = 0; i < columns.length; i++) {
-      if (cursor[i] < columns[i].length && columns[i][cursor[i]] === id) return i;
+      const index = columns[i].indexOf(id);
+      if (index >= cursor[i]) return [i, index];
     }
-    return -1;
+    return null;
   };
 
   /**
-   * Nhóm rút được ngay: mọi thành viên đều đang ở đầu hàng của mình (mỗi người một hàng khác nhau)
-   * và khoang còn đủ chỗ cho cả nhóm.
+   * Nhóm rút được ngay: ở MỖI hàng nó có mặt, các thành viên phải nằm liền mạch ngay từ đầu hàng —
+   * tức bậc cursor, cursor+1, … Một luật này gói đủ ba trường hợp:
+   *  - mỗi khẩu một hàng: ai cũng phải đang ở đầu hàng;
+   *  - hai khẩu cùng hàng đứng sát nhau: nhấc khẩu trước thì khẩu sau lên theo — hợp lệ;
+   *  - hai khẩu cùng hàng nhưng có khẩu khác chen giữa: khẩu chen giữa không đi cùng được nên
+   *    nhóm không bao giờ rút được.
+   * Ngoài ra khoang chờ phải còn đủ chỗ cho cả nhóm.
    */
   const pullableGroup = (row: number, freeSlots: number): number[] | null => {
     const head = columns[row][cursor[row]];
     const group = groupOf.get(head) ?? [head];
     if (group.length > freeSlots) return null;
-    const rows = new Set<number>();
+
+    const byColumn = new Map<number, number[]>();
     for (const id of group) {
-      const r = frontRowOf(id);
-      if (r < 0 || rows.has(r)) return null; // chưa lên đầu hàng, hoặc hai thành viên cùng một hàng
-      rows.add(r);
+      if ((ice.get(id) ?? 0) > 0) return null; // còn băng thì không bấm được
+      if (locked.has(id)) return null; // ổ khoá chưa mở thì không bấm được (và chặn cả hàng sau nó)
+      const at = pendingPosition(id);
+      if (!at) return null; // thành viên chưa xếp vào hàng nào (hoặc đã rút) -> cả nhóm kẹt
+      const list = byColumn.get(at[0]);
+      if (list) list.push(at[1]);
+      else byColumn.set(at[0], [at[1]]);
+    }
+    for (const [column, indices] of byColumn) {
+      indices.sort((a, b) => a - b);
+      for (let k = 0; k < indices.length; k++) {
+        if (indices[k] !== cursor[column] + k) return null;
+      }
     }
     return group;
+  };
+
+  /**
+   * Ổ nào được mở khi có một chìa lên khoang.
+   *
+   * Ưu tiên ổ đang nằm ngay đầu một hàng: đó là ổ duy nhất thực sự chặn đường lúc này, mở ổ nằm sâu
+   * bên trong thì hàng vẫn tắc y như cũ. Không còn ổ nào chặn đầu hàng thì mở đại một ổ.
+   */
+  const pickLockToOpen = (): number => {
+    for (let i = 0; i < columns.length; i++) {
+      if (cursor[i] >= columns[i].length) continue;
+      const head = columns[i][cursor[i]];
+      if (locked.has(head)) return head;
+    }
+    return [...locked][0];
   };
 
   const canPull = () => {
@@ -361,6 +520,13 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
         wastedBullets,
         deadlocked: false,
         groupNeedsSlots: 0,
+        queueAtEnd: [],
+        unpulled: 0,
+        stuckGroups: [],
+        frozenHeads: [],
+        lockedHeads: [],
+        keysLeft: 0,
+        columnsWithBlasters: 0,
         choiceFreedom: freedomSamples ? freedomSum / freedomSamples : 1,
       };
     }
@@ -379,8 +545,13 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
       .sort((a, b) => a.order - b.order);
     if (shooters.length) {
       const q = shooters[0];
+      // Khẩu đang kẹt chỉ chờ đúng màu tới lượt của nó, không phải mọi màu nó mang: đào để mở màu
+      // phụ trong khi nó còn chưa bắn xong màu chính thì chẳng giúp được gì.
       const stalledColors = new Set(
-        queue.filter((x) => !firablePool(x)).flatMap((x) => livePools(x).map((p) => p.color)),
+        queue
+          .filter((x) => !firablePool(x))
+          .map((x) => activePool(x)?.color)
+          .filter((c): c is number => c !== undefined),
       );
       const pool = firablePool(q)!;
       const target = pickTarget(state, pool.color, policy, stalledColors, rand);
@@ -420,10 +591,22 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
         freedomSamples++;
       }
       if (bestGroup) {
+        // Đẩy con trỏ theo SỐ thành viên ở mỗi hàng (nhóm có thể có 2 khẩu cùng một hàng), và đọc
+        // hết vị trí trước khi đẩy để vị trí không bị lệch giữa chừng.
+        const advance = new Map<number, number>();
         for (const id of bestGroup) {
-          const row = frontRowOf(id);
-          cursor[row]++;
+          const at = pendingPosition(id)!;
+          advance.set(at[0], (advance.get(at[0]) ?? 0) + 1);
           queue.push({ id, pools: poolsOf(byId.get(id)!), order: order++ });
+        }
+        for (const [column, count] of advance) cursor[column] += count;
+        // Một lượt bấm = băng của mọi khẩu tan 1. Nhấc cả cặp nối nhau vẫn chỉ là MỘT lượt bấm.
+        for (const [id, left] of ice) if (left > 0) ice.set(id, left - 1);
+        // Chìa vừa lên khoang thì mở ổ. Data không nói chìa nào mở ổ nào (xem chú thích đầu file),
+        // nên mở ổ đang chặn đầu hàng trước — đó là ổ duy nhất thực sự cản đường lúc này.
+        for (const id of bestGroup) {
+          if (byId.get(id)!.type !== BLASTER_TYPE_KEY || locked.size === 0) continue;
+          locked.delete(pickLockToOpen());
         }
         picks++;
         const stalled = queue.filter((q) => !firablePool(q)).length;
@@ -436,11 +619,47 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
     // 4. Không bắn được, không rút được -> tắc. Nếu còn súng ở hàng mà nghẽn vì nhóm nối nhau không
     // đủ chỗ thì nói rõ ra, vì cách sửa khác hẳn (tăng dockCount / bỏ nối) so với tắc vì màu.
     let groupNeeds = 0;
+    const stuckGroups: SimOutput['stuckGroups'] = [];
+    const frozenHeads: SimOutput['frozenHeads'] = [];
+    const lockedHeads: number[] = [];
+    let columnsWithBlasters = 0;
     for (let i = 0; i < columns.length; i++) {
       if (cursor[i] >= columns[i].length) continue;
+      columnsWithBlasters++;
       const head = columns[i][cursor[i]];
+      const frozen = ice.get(head) ?? 0;
+      if (frozen > 0) frozenHeads.push({ id: head, left: frozen });
+      if (locked.has(head)) lockedHeads.push(head);
       const group = groupOf.get(head) ?? [head];
       if (group.length > slots) groupNeeds = Math.max(groupNeeds, group.length);
+      if (group.length <= 1 || pullableGroup(i, slots - queue.length)) continue;
+
+      // Phân loại vì sao nhóm này không rút được — mỗi loại một cách sửa khác nhau.
+      const positions = group.map((id) => pendingPosition(id));
+      let why: SimOutput['stuckGroups'][number]['why'] = 'deep';
+      if (group.length > slots) {
+        why = 'slots';
+      } else if (positions.some((p) => !p)) {
+        why = 'unplaced';
+      } else {
+        const byColumn = new Map<number, number[]>();
+        for (const at of positions) {
+          const list = byColumn.get(at![0]);
+          if (list) list.push(at![1]);
+          else byColumn.set(at![0], [at![1]]);
+        }
+        // Nhiều thành viên trong cùng một hàng thì phải đứng liền nhau. Xét độ liền của riêng chúng
+        // (không so với con trỏ hàng): đó mới là khuyết tật vĩnh viễn, chứ còn "chưa tới lượt" thì
+        // hàng vơi thêm là xong.
+        for (const indices of byColumn.values()) {
+          if (indices.length < 2) continue;
+          indices.sort((a, b) => a - b);
+          for (let k = 1; k < indices.length; k++) {
+            if (indices[k] !== indices[k - 1] + 1) why = 'gap';
+          }
+        }
+      }
+      stuckGroups.push({ ids: group, why });
     }
     return {
       won: false,
@@ -451,6 +670,17 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
       wastedBullets,
       deadlocked: queue.length > 0 || canPull(),
       groupNeedsSlots: groupNeeds,
+      // Báo cáo đúng màu nó đang chờ (túi tới lượt), không phải cả hai màu.
+      queueAtEnd: queue.map((q) => {
+        const pool = activePool(q);
+        return { id: q.id, colors: pool ? [pool.color] : [] };
+      }),
+      unpulled: columns.reduce((n, c, i) => n + (c.length - cursor[i]), 0),
+      stuckGroups,
+      frozenHeads,
+      lockedHeads,
+      keysLeft: columns.reduce((n, c, i) => n + c.slice(cursor[i]).filter((id) => byId.get(id)?.type === BLASTER_TYPE_KEY).length, 0),
+      columnsWithBlasters,
       choiceFreedom: freedomSamples ? freedomSum / freedomSamples : 1,
     };
   }
@@ -464,6 +694,13 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
     wastedBullets,
     deadlocked: true,
     groupNeedsSlots: 0,
+    queueAtEnd: [],
+    unpulled: 0,
+    stuckGroups: [],
+    frozenHeads: [],
+    lockedHeads: [],
+    keysLeft: 0,
+    columnsWithBlasters: 0,
     choiceFreedom: freedomSamples ? freedomSum / freedomSamples : 1,
   };
 }
@@ -471,7 +708,9 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
 /** Cơ chế có trong data nhưng mô phỏng chưa xử — để nói rõ kết quả chỉ là gần đúng. */
 function ignoredMechanics(blasters: BlasterEntry[]): string[] {
   const out: string[] = [];
-  const types = [...new Set(blasters.filter((b) => b.type !== 0).map((b) => b.type))];
+  // Key/Lock đã mô phỏng; chỉ còn các loại khác là chưa.
+  const modelled = new Set([BLASTER_TYPE_NORMAL, BLASTER_TYPE_KEY, BLASTER_TYPE_LOCK]);
+  const types = [...new Set(blasters.filter((b) => !modelled.has(b.type)).map((b) => b.type))];
   if (types.length) {
     out.push(
       `súng loại ${types
@@ -479,11 +718,127 @@ function ignoredMechanics(blasters: BlasterEntry[]): string[] {
         .join(', ')} (coi như súng thường)`,
     );
   }
-  if (blasters.some((b) => b.isHidden)) out.push('súng ẩn (isHidden)');
-  if (blasters.some((b) => b.iceHp > 0)) out.push('súng bọc băng (iceHp)');
   if (blasters.some((b) => b.isChained)) out.push('súng bị khoá xích (isChained)');
   if (blasters.some((b) => b.innerBlasterIds.length)) out.push('súng lồng trong (inner)');
   return out;
+}
+
+const colorName = (id: number) => gameColorById(id)?.name ?? `ColorType ${id}`;
+
+/**
+ * Nói cho ra NGUYÊN NHÂN, không phải chỉ liệt kê những gì còn sót.
+ *
+ * "Hết súng mà còn 532 khối" thì đúng nhưng vô dụng — người dựng level vẫn phải tự đi tìm xem tại
+ * sao. Ở đây tách bạch mấy nguyên nhân khác hẳn nhau, vì cách sửa mỗi cái một khác:
+ *  1. thiếu đạn ngay từ đầu  -> thêm đạn / thêm súng
+ *  2. đạn đủ nhưng bị phí    -> súng hai màu bắn lẹm sang màu kia
+ *  3. nhóm nối nhau quá to   -> tăng dockCount hoặc bỏ nối
+ *  4. tắc hàng               -> đổi thứ tự súng trong hàng
+ *  5. khối bị bọc kín        -> sửa hình khối (tường vây quanh)
+ */
+function explainFailure(
+  input: SolveInput,
+  sim: SimOutput,
+  initialByColor: Map<number, number>,
+): string {
+  const left = [...sim.state.remaining.entries()]
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1]);
+  const leftText = left
+    .slice(0, 4)
+    .map(([c, n]) => `${colorName(c)} ${n}`)
+    .join(', ');
+  const tail = `Còn ${sim.state.blocksLeft} khối (${leftText}${left.length > 4 ? '…' : ''}).`;
+
+  // 1. Thiếu đạn: so tổng đạn cả màn với tổng khối, theo từng màu. Đây là lỗi tĩnh — thứ tự bấm kiểu
+  // gì cũng không cứu được, nên phải báo trước mọi nguyên nhân khác.
+  const bullets = bulletCountsByColor(input.blasters);
+  const short = [...initialByColor.entries()]
+    .map(([color, blocks]) => ({ color, blocks, have: bullets.get(color) ?? 0 }))
+    .filter((r) => r.have < r.blocks);
+  if (short.length) {
+    const detail = short
+      .map((r) => `${colorName(r.color)} thiếu ${r.blocks - r.have} (${r.have} đạn / ${r.blocks} khối)`)
+      .join('; ');
+    return `Thiếu đạn: ${detail}. Bấm kiểu gì cũng không đủ để phá hết — thêm đạn hoặc thêm súng cho các màu này.`;
+  }
+
+  // 2. Nhóm nối nhau to hơn cả khoang chờ.
+  if (sim.groupNeedsSlots) {
+    return (
+      `Nhóm ${sim.groupNeedsSlots} súng nối nhau phải cùng lên khoang một lượt, mà khoang chỉ có ` +
+      `${input.dockCount} ô — không bao giờ rút được. ${tail}`
+    );
+  }
+
+  // 3. Băng khoá cứng: mọi đầu hàng còn súng đều đang đóng băng. Băng chỉ tan khi có khẩu được nhấc
+  // lên, mà lúc này không nhấc được khẩu nào -> băng đứng yên vĩnh viễn.
+  if (sim.frozenHeads.length && sim.frozenHeads.length === sim.columnsWithBlasters) {
+    const detail = sim.frozenHeads.map((h) => `${h.id} còn ${h.left}`).join(', ');
+    return (
+      `Băng khoá cứng: đầu của mọi hàng còn súng đều đang đóng băng (${detail}), mà băng chỉ tan ` +
+      `mỗi khi nhấc được một khẩu lên — không nhấc được khẩu nào thì băng không bao giờ tan. ` +
+      `Giảm iceHp, hoặc chừa một hàng có khẩu đầu không băng. ${tail}`
+    );
+  }
+
+  // 4. Ổ khoá chặn đầu hàng mà không còn chìa nào lấy được -> hàng đó chết hẳn.
+  if (sim.lockedHeads.length) {
+    return (
+      `Ổ khoá ${sim.lockedHeads.join(', ')} đang chặn đầu hàng mà ` +
+      `${sim.keysLeft ? `${sim.keysLeft} chìa còn lại đều nằm sau một ổ khác` : 'không còn chìa nào'} — ` +
+      `hàng đó không mở ra được nữa. Thêm chìa, hoặc chuyển chìa lên trước ổ. ${tail}`
+    );
+  }
+
+  // 5. Nhóm nối nhau chặn cứng đầu hàng: mọi khẩu phía sau nó thành vô dụng.
+  const jam = sim.stuckGroups.find((g) => g.why === 'gap') ?? sim.stuckGroups.find((g) => g.why === 'unplaced');
+  if (jam) {
+    const ids = jam.ids.join('↔');
+    const behind = sim.unpulled ? ` ${sim.unpulled} khẩu phía sau vì thế không dùng được.` : '';
+    return jam.why === 'gap'
+      ? `Cặp nối nhau ${ids} nằm cùng một hàng nhưng có khẩu khác chen giữa, nên không bao giờ rút ` +
+          `lên cùng nhau được và hàng đó tắc từ đấy trở đi.${behind} Xếp hai khẩu sát nhau, hoặc ` +
+          `chuyển một khẩu sang hàng khác. ${tail}`
+      : `Nhóm nối nhau ${ids} có khẩu chưa được xếp vào hàng nào, nên cả nhóm không rút lên được ` +
+          `và hàng đang bị nó chặn.${behind} ${tail}`;
+  }
+
+  // 4. Khối bị bọc kín: còn khối nhưng chẳng màu nào còn khối hở, tức không còn gì để bắn kể cả khi
+  // có sẵn súng. Thường là bị tường (ColorType.None) vây quanh.
+  const noExposed = left.every(([c]) => (sim.state.exposed.get(c)?.size ?? 0) === 0);
+  if (left.length && noExposed) {
+    return (
+      `Số khối còn lại không bao giờ hở ra mặt nào để bắn — gần như chắc chắn bị khối tường vây ` +
+      `kín. Sửa hình khối chứ không sửa được bằng súng. ${tail}`
+    );
+  }
+
+  // 4. Tắc hàng: khoang còn súng nhưng không khẩu nào bắn được, và không rút thêm được ai.
+  if (sim.queueAtEnd.length) {
+    const waiting = sim.queueAtEnd
+      .slice(0, 4)
+      .map((q) => `${q.id} (chờ ${q.colors.map(colorName).join('/') || 'không còn màu nào'})`)
+      .join(', ');
+    return (
+      `Tắc hàng: khoang chờ kín ${sim.queueAtEnd.length}/${input.dockCount} ô mà không khẩu nào có ` +
+      `khối hở cùng màu để bắn — ${waiting}${sim.unpulled ? `, còn ${sim.unpulled} khẩu chưa rút được` : ''}. ` +
+      `Đổi thứ tự súng trong hàng hoặc tăng dockCount. ${tail}`
+    );
+  }
+
+  // 5. Đạn đủ trên giấy nhưng bị phí (súng hai màu bắn lẹm sang màu kia rồi rời khoang).
+  if (sim.wastedBullets) {
+    return (
+      `Đủ đạn trên giấy nhưng ${sim.wastedBullets} viên bị bỏ phí: súng rời khoang khi màu của nó ` +
+      `đã hết khối (hay gặp ở súng hai màu — nó bắn màu nào cũng được nên tiêu lẹm sang màu kia). ${tail}`
+    );
+  }
+
+  // 6. Không rơi vào mẫu nào ở trên: nói thẳng là hết súng, kèm số liệu để còn lần ra.
+  return (
+    `Hết súng mà vẫn còn khối${sim.unpulled ? ` (${sim.unpulled} khẩu chưa rút được khỏi hàng)` : ''}. ${tail}`
+  );
 }
 
 /** Thử giải màn: chạy lần lượt các chiến lược, thắng ở cái nào thì trả về ngay. */
@@ -508,6 +863,7 @@ export function checkWinnable(input: SolveInput): SolveResult {
     choiceFreedom: sim.choiceFreedom,
     policiesTried: tried,
     ignoredMechanics: ignored,
+    hiddenCount: input.blasters.filter((b) => b.isHidden).length,
   });
 
   if (totalBlocks === 0) {
@@ -528,18 +884,7 @@ export function checkWinnable(input: SolveInput): SolveResult {
   }
 
   const sim = worst!;
-  const left = [...sim.state.remaining.entries()].filter(([, n]) => n > 0);
-  const stuck = left
-    .map(([c, n]) => `${gameColorById(c)?.name ?? c} (${n} khối)`)
-    .slice(0, 4)
-    .join(', ');
-  const reason = sim.groupNeedsSlots
-    ? `Nhóm ${sim.groupNeedsSlots} súng nối nhau phải cùng lên khoang một lượt, mà khoang chỉ có ` +
-      `${input.dockCount} ô — không bao giờ rút được. Còn ${sim.state.blocksLeft} khối: ${stuck}.`
-    : sim.deadlocked
-      ? `Tắc hàng: khoang chờ đầy mà không súng nào còn khối hở cùng màu. Còn ${sim.state.blocksLeft} khối: ${stuck}.`
-      : `Hết súng mà còn ${sim.state.blocksLeft} khối: ${stuck}.`;
-  return shape(sim, POLICIES.length, reason);
+  return shape(sim, POLICIES.length, explainFailure(input, sim, base.remaining));
 }
 
 // ---------- Thang độ khó 0..10 ----------
@@ -581,6 +926,18 @@ const WEIGHTS = {
   buried: 1,
   mixing: 1.5,
   size: 1,
+  /**
+   * Giấu màu không làm màn khó GIẢI hơn (mô phỏng vẫn thắng y như cũ) mà làm khó CHƠI hơn: không
+   * nhìn trước được thì không tính đường được. Trọng số ngang với số màu vì nó vô hiệu hoá đúng cái
+   * thông tin mà người chơi dựa vào để chọn hàng.
+   */
+  hidden: 2,
+  /**
+   * Tường bịt hướng bắn, buộc người chơi xoay khối tìm góc khác — và khối bị nó che thì phải đào
+   * vòng chứ không bắn thẳng được. Trọng số vừa phải: nó làm rối đường đi chứ không khoá cứng lượt
+   * bấm như băng.
+   */
+  walls: 1,
   mechanics: 0.5,
 } as const;
 
@@ -653,6 +1010,10 @@ export function rateDifficulty(input: SolveInput, result: SolveResult): Difficul
 
   const buried = buriedShare(input.grid);
   const mixing = mixingRatio(input.dockColumns, byId);
+  let wallCount = 0;
+  for (const { voxel } of input.grid.entries()) {
+    if (matchGameColor(voxel.color).color.id === WALL_COLOR_ID) wallCount++;
+  }
   const mechanics = result.ignoredMechanics.length;
 
   const freedomPercent = Math.round(result.choiceFreedom * 100);
@@ -714,6 +1075,25 @@ export function rateDifficulty(input: SolveInput, result: SolveResult): Difficul
       value: clamp01((result.totalBlocks - 100) / 1400),
       weight: WEIGHTS.size,
       detail: `${result.totalBlocks} khối (100 = ngắn, 1500 = dài)`,
+    },
+    {
+      key: 'walls',
+      label: 'Tường che',
+      // Lấy theo tỉ lệ tường trên tổng voxel: tường càng nhiều thì càng nhiều hướng bị bịt.
+      value: clamp01(wallCount / Math.max(1, wallCount + result.totalBlocks) / 0.4),
+      weight: WEIGHTS.walls,
+      detail: wallCount
+        ? `${wallCount} khối tường / ${wallCount + result.totalBlocks} voxel — bịt hướng bắn, phải xoay tìm góc`
+        : 'không có',
+    },
+    {
+      key: 'hidden',
+      label: 'Súng giấu màu',
+      value: clamp01(input.blasters.length ? result.hiddenCount / input.blasters.length : 0),
+      weight: WEIGHTS.hidden,
+      detail: result.hiddenCount
+        ? `${result.hiddenCount}/${input.blasters.length} khẩu giấu màu — người chơi không nhìn trước được`
+        : 'không có',
     },
     {
       key: 'mechanics',

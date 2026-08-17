@@ -2,6 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   BLASTER_TYPES,
+  BLASTER_TYPE_KEY,
+  BLASTER_TYPE_LOCK,
+  BLASTER_TYPE_NORMAL,
   GAME_COLORS,
   WALL_COLOR_ID,
   blockCountsByColor,
@@ -35,6 +38,31 @@ const MECHANICS = [
     id: 'connected' as const,
     label: '🔗 Connected',
     hint: 'Bấm 2 khẩu để nối chúng vào nhau (bấm lại cặp đã nối là bỏ nối). Hai khẩu nối nhau phải cùng lên khoang chờ một lượt.',
+  },
+  {
+    id: 'ice' as const,
+    label: '🧊 Ice',
+    hint: 'Bấm một khẩu để bọc băng (bấm lại là gỡ). Khẩu bọc băng không bấm lên được; mỗi lượt nhấc một khẩu bất kỳ thì băng của mọi khẩu tan 1.',
+  },
+  {
+    id: 'lock' as const,
+    label: '🔒 Lock',
+    hint: 'Bấm một khẩu để biến nó thành ổ khoá (bấm lại là bỏ). Ổ khoá chưa mở thì không bấm được, và mọi khẩu xếp sau nó trong hàng cũng kẹt theo.',
+  },
+  {
+    id: 'key' as const,
+    label: '🔑 Key',
+    hint: 'Bấm một khẩu để gắn chìa (bấm lại là bỏ). Chìa lên khoang chờ là mở một ổ khoá — nhớ xếp chìa ở hàng KHÔNG bị chính ổ đó chặn.',
+  },
+  {
+    id: 'double' as const,
+    label: '🎨 Double',
+    hint: 'Chọn màu 2 rồi bấm một khẩu để nó thành súng hai màu (bấm lại là bỏ). Mỗi màu có túi đạn riêng bằng bulletCount, và phải bắn hết màu 1 mới sang màu 2.',
+  },
+  {
+    id: 'hidden' as const,
+    label: '❓ Hidden',
+    hint: 'Bấm một khẩu để giấu màu (bấm lại là bỏ giấu). Khẩu giấu màu chỉ lộ màu thật khi khẩu ngay trước nó được nhấc lên — nên đừng giấu khẩu đang đứng đầu hàng, nó chẳng còn ai phía trước để lộ.',
   },
 ];
 
@@ -94,6 +122,10 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
   const [mechanic, setMechanic] = useState<MechanicId | null>(null);
   /** Khẩu đã bấm đầu tiên, đang chờ bấm khẩu thứ hai để nối. */
   const [pendingLink, setPendingLink] = useState<number | null>(null);
+  /** Số băng gán cho khẩu khi bấm bằng mechanic Ice. */
+  const [iceAmount, setIceAmount] = useState(5);
+  /** Màu 2 gán cho khẩu khi bấm bằng mechanic Double. */
+  const [secondColor, setSecondColor] = useState(SHOOTABLE_COLORS[0]?.id ?? 1);
 
   // Vẽ đoạn nối: cần vị trí thật của từng chip nên phải đo sau khi layout xong.
   const linksBoxRef = useRef<HTMLDivElement>(null);
@@ -278,10 +310,35 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
         className={
           `bl-chip${b.id === selectedId ? ' active' : ''}` +
           `${orphan ? ' bl-chip-orphan' : ''}${linked ? ' bl-chip-linked' : ''}` +
-          `${pending ? ' bl-chip-pending' : ''}${pickable ? ' bl-chip-pickable' : ''}`
+          `${pending ? ' bl-chip-pending' : ''}${pickable ? ' bl-chip-pickable' : ''}` +
+          `${b.iceHp > 0 ? ' bl-chip-iced' : ''}` +
+          `${mechanic && mechanic !== 'connected' ? ' bl-chip-pickable' : ''}`
         }
         key={id}
         onClick={() => {
+          if (mechanic === 'ice') {
+            updateBlaster(b.id, { iceHp: b.iceHp > 0 ? 0 : iceAmount });
+            setSelectedId(b.id);
+            return;
+          }
+          if (mechanic === 'hidden') {
+            updateBlaster(b.id, { isHidden: !b.isHidden });
+            setSelectedId(b.id);
+            return;
+          }
+          if (mechanic === 'double') {
+            // Bấm lại đúng màu đang gán = bỏ hai màu. Màu 2 trùng màu 1 thì vô nghĩa nên chặn.
+            const next = b.secondaryColor === secondColor || secondColor === b.color ? 0 : secondColor;
+            updateBlaster(b.id, { secondaryColor: next });
+            setSelectedId(b.id);
+            return;
+          }
+          if (mechanic === 'lock' || mechanic === 'key') {
+            const want = mechanic === 'lock' ? BLASTER_TYPE_LOCK : BLASTER_TYPE_KEY;
+            updateBlaster(b.id, { type: b.type === want ? BLASTER_TYPE_NORMAL : want });
+            setSelectedId(b.id);
+            return;
+          }
           if (linking) {
             // Bấm 1: chọn khẩu đầu. Bấm 2: nối / bỏ nối. Bấm lại đúng khẩu đầu: huỷ.
             if (pendingLink === null) {
@@ -300,21 +357,57 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
           setSelectedId(b.id);
         }}
         title={
-          pickable
+          mechanic === 'hidden'
+            ? b.isHidden
+              ? `Bỏ giấu màu cho ${b.id}`
+              : `Giấu màu ${b.id}`
+            : mechanic === 'ice'
+            ? b.iceHp > 0
+              ? `Gỡ băng khỏi ${b.id} (đang ${b.iceHp})`
+              : `Bọc băng ${iceAmount} cho ${b.id}`
+            : pickable
             ? `${alreadyLinked ? 'Bỏ nối' : 'Nối'} ${pendingLink} ↔ ${b.id}`
             : pending
               ? `${b.id} — bấm khẩu thứ hai để nối, hoặc bấm lại để huỷ`
               : `id ${b.id} · ${color?.name ?? b.color} · ${b.bulletCount} đạn · ${
                   BLASTER_TYPES.find((t) => t.id === b.type)?.name ?? b.type
-                }${b.connectedBlasterIds.length ? ` · nối với ${b.connectedBlasterIds.join(', ')}` : ''}${
+                }${
+                  b.secondaryColor !== WALL_COLOR_ID
+                    ? ` → rồi ${gameColorById(b.secondaryColor)?.name ?? b.secondaryColor} (${b.bulletCount} đạn mỗi màu)`
+                    : ''
+                }${b.isHidden ? ' · giấu màu' : ''}${b.iceHp > 0 ? ` · băng ${b.iceHp}` : ''}${
+                  b.connectedBlasterIds.length ? ` · nối với ${b.connectedBlasterIds.join(', ')}` : ''
+                }${
                   orphan ? ' — chưa nằm trong hàng nào' : ''
                 }`
         }
       >
-        <span className="bl-chip-swatch" style={{ background: color?.hex ?? '#000' }} />
+        {/* Vẫn hiện màu THẬT (đây là công cụ dựng level, người dựng phải thấy), chỉ phủ thêm vân
+            gạch để biết trong game màu này đang bị giấu — đỡ tốn chỗ hơn một huy hiệu riêng. */}
+        {/* backgroundColor chứ KHÔNG phải background: viết tắt `background` sẽ xoá luôn
+            `background-image` trong CSS, tức mất sạch vân gạch của khẩu giấu màu. */}
+        <span
+          className={`bl-chip-swatch${b.isHidden ? ' bl-swatch-hidden' : ''}`}
+          style={{ backgroundColor: color?.hex ?? '#000' }}
+        />
+        {/* Súng hai màu: ô màu thứ hai dán sát ngay sau ô thứ nhất, đọc được luôn thứ tự bắn
+            (trái = bắn trước). Rõ hơn một huy hiệu chữ, mà cũng chỉ tốn 8px. */}
+        {b.secondaryColor !== WALL_COLOR_ID && (
+          <span
+            className="bl-chip-swatch2"
+            style={{ backgroundColor: gameColorById(b.secondaryColor)?.hex ?? '#000' }}
+          />
+        )}
         <span className="bl-chip-num">{b.bulletCount}</span>
+        {b.iceHp > 0 && <span className="bl-chip-ice">🧊{b.iceHp}</span>}
         {b.connectedBlasterIds.length > 0 && <span className="bl-chip-link">🔗</span>}
-        {b.type !== 0 && <span className="bl-chip-type">T{b.type}</span>}
+        {/* Ổ khoá / chìa hiện hẳn biểu tượng — hai loại này quyết định thứ tự bấm nên phải thấy
+            ngay trên chip, không thể để người dùng đoán từ "T1"/"T2". */}
+        {b.type === BLASTER_TYPE_LOCK && <span className="bl-chip-type">🔒</span>}
+        {b.type === BLASTER_TYPE_KEY && <span className="bl-chip-type">🔑</span>}
+        {b.type !== BLASTER_TYPE_NORMAL &&
+          b.type !== BLASTER_TYPE_LOCK &&
+          b.type !== BLASTER_TYPE_KEY && <span className="bl-chip-type">T{b.type}</span>}
       </button>
     );
   };
@@ -416,9 +509,39 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
         </div>
         {mechanic && (
           <div className="bl-note bl-linking-hint">
-            {pendingLink === null
-              ? MECHANICS.find((m) => m.id === mechanic)?.hint
-              : `Đã chọn ${pendingLink} — bấm khẩu thứ hai để nối (bấm lại ${pendingLink} để huỷ).`}
+            {mechanic === 'ice' && (
+              <label className="bl-ice-amount">
+                Băng
+                <input
+                  type="number"
+                  min={1}
+                  value={iceAmount}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (Number.isFinite(n) && n >= 1) setIceAmount(Math.floor(n));
+                  }}
+                />
+              </label>
+            )}
+            {mechanic === 'double' && (
+              <span className="bl-ice-amount">
+                Màu 2
+                <span className="bl-mini-swatches">
+                  {SHOOTABLE_COLORS.map((c) => (
+                    <button
+                      key={c.id}
+                      className={`swatch${c.id === secondColor ? ' active' : ''}`}
+                      style={{ background: c.hex }}
+                      title={`${c.id} — ${c.name}`}
+                      onClick={() => setSecondColor(c.id)}
+                    />
+                  ))}
+                </span>
+              </span>
+            )}
+            {mechanic === 'connected' && pendingLink !== null
+              ? `Đã chọn ${pendingLink} — bấm khẩu thứ hai để nối (bấm lại ${pendingLink} để huỷ).`
+              : MECHANICS.find((m) => m.id === mechanic)?.hint}
           </div>
         )}
 
@@ -431,6 +554,13 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
                   {check.result.picks} lần bấm · {check.result.totalBlocks} khối
                 </span>
               )}
+              <button
+                className="bl-check-close"
+                onClick={() => setCheck(null)}
+                title="Đóng kết quả (bấm Thử giải để chạy lại)"
+              >
+                ✕
+              </button>
             </div>
 
             {!check.result.winnable && <div className="bl-check-why">{check.result.reason}</div>}
@@ -483,6 +613,15 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
                   </button>
                 )}
               </>
+            )}
+
+            {/* Giấu màu không đổi được kết quả giải, nhưng người chơi thật thì mò chứ không nhìn
+                thấy như mô phỏng — phải nói rõ kẻo con số bị đọc thành "màn này dễ". */}
+            {check.result.hiddenCount > 0 && (
+              <div className="bl-check-approx">
+                {check.result.hiddenCount} khẩu giấu màu — lời giải này chơi với thông tin đầy đủ,
+                nên đây là giới hạn trên; người chơi không nhìn trước được màu.
+              </div>
             )}
 
             {check.result.ignoredMechanics.length > 0 && (
@@ -640,8 +779,32 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
                   key={c.id}
                   className={`swatch${c.id === selected.color ? ' active' : ''}`}
                   style={{ background: c.hex }}
-                  title={`${c.id} — ${c.name}`}
+                  title={`Màu 1 (bắn trước): ${c.id} — ${c.name}`}
                   onClick={() => updateBlaster(selected.id, { color: c.id })}
+                />
+              ))}
+            </div>
+
+            {/* Màu 2 của súng Double. Để ngay dưới màu 1 nên đọc được thứ tự bắn từ trên xuống. */}
+            <div className="bl-swatches bl-swatches-2">
+              <button
+                className={`bl-second-off${selected.secondaryColor === WALL_COLOR_ID ? ' active' : ''}`}
+                title="Không dùng màu 2 (súng một màu)"
+                onClick={() => updateBlaster(selected.id, { secondaryColor: WALL_COLOR_ID })}
+              >
+                ✕
+              </button>
+              {SHOOTABLE_COLORS.map((c) => (
+                <button
+                  key={c.id}
+                  className={`swatch${c.id === selected.secondaryColor ? ' active' : ''}`}
+                  style={{ background: c.hex }}
+                  title={`Màu 2 (bắn sau khi hết màu 1): ${c.id} — ${c.name}`}
+                  onClick={() =>
+                    updateBlaster(selected.id, {
+                      secondaryColor: c.id === selected.color ? WALL_COLOR_ID : c.id,
+                    })
+                  }
                 />
               ))}
             </div>
@@ -673,6 +836,25 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
                     </option>
                   ))}
                 </select>
+              </label>
+              <label>
+                <span>🧊 iceHp</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={selected.iceHp}
+                  onChange={(e) =>
+                    updateBlaster(selected.id, { iceHp: Math.max(0, Number(e.target.value)) })
+                  }
+                />
+              </label>
+              <label className="bl-edit-check">
+                <input
+                  type="checkbox"
+                  checked={selected.isHidden}
+                  onChange={(e) => updateBlaster(selected.id, { isHidden: e.target.checked })}
+                />
+                ❓ isHidden
               </label>
             </div>
 
@@ -740,12 +922,16 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
               </button>
             </div>
 
-            {selected.type !== 0 && (
-              <div className="bl-note">
-                Loại {BLASTER_TYPES.find((t) => t.id === selected.type)?.name} được ghi nguyên vào
-                file, nhưng tool chưa kiểm luật riêng của nó (khoá/chìa, generator…).
-              </div>
-            )}
+            {/* Key/Lock giờ đã được mô phỏng, chỉ còn các loại khác là chưa — đừng để dòng nhắc cũ
+                nói oan là tool không kiểm khoá/chìa. */}
+            {selected.type !== BLASTER_TYPE_NORMAL &&
+              selected.type !== BLASTER_TYPE_KEY &&
+              selected.type !== BLASTER_TYPE_LOCK && (
+                <div className="bl-note">
+                  Loại {BLASTER_TYPES.find((t) => t.id === selected.type)?.name} được ghi nguyên vào
+                  file, nhưng tool chưa kiểm luật riêng của nó (generator, búa…).
+                </div>
+              )}
           </div>
         )}
 

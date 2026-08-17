@@ -43,6 +43,11 @@ const META_KEY = 'voxel-level-meta';
 // khớp ColorType nào và lúc xuất phải đoán màu gần nhất.
 const initialPalette = GAME_PALETTE;
 
+// Ô đầu bảng màu là ô TƯỜNG (ColorType.None) — lấy nó làm màu mặc định thì mở tool lên đặt khối đầu
+// tiên là ra ngay một khối tường: không bắn được, không tính vào điều kiện thắng. Mặc định phải là
+// một màu bắn được.
+const DEFAULT_COLOR = GAME_PALETTE[1];
+
 interface EditorState {
   grid: VoxelGrid;
   /** Tăng mỗi khi grid đổi để component render lại (grid là mutable ref). */
@@ -154,7 +159,7 @@ function expandMirror(cells: Cell[], mx: boolean, my: boolean): Cell[] {
 export const useEditor = create<EditorState>((set, get) => ({
   grid: new VoxelGrid(),
   version: 0,
-  color: initialPalette[0],
+  color: DEFAULT_COLOR,
   palette: initialPalette,
   mode: 'place',
   mirrorX: false,

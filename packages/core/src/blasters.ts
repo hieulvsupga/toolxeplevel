@@ -16,6 +16,8 @@ export const BLASTER_TYPES: { id: number; name: string; label: string }[] = [
 ];
 
 export const BLASTER_TYPE_NORMAL = 0;
+export const BLASTER_TYPE_KEY = 1;
+export const BLASTER_TYPE_LOCK = 2;
 
 /** Một `BlasterData` bên Unity — 1:1 với các field trong `Data/Shooter/BlasterData.cs`. */
 export interface BlasterEntry {
@@ -313,6 +315,56 @@ export function validateShooters(
     problems.push(`Súng có bulletCount ≤ 0: ${noBullet.join(', ')}.`);
   }
 
+  // ---- Cơ chế Ice ----
+  // Băng chỉ tan mỗi khi có một khẩu được nhấc lên, nên hai thế bí sau là chắc chắn hỏng, không cần
+  // mô phỏng cũng biết.
+  const negativeIce = blasters.filter((b) => b.iceHp < 0).map((b) => b.id);
+  if (negativeIce.length) {
+    problems.push(`iceHp âm: ${negativeIce.join(', ')}.`);
+  }
+
+  const heads = dockColumns.filter((c) => c.length).map((c) => c[0]);
+  const headBlasters = heads.map((id) => blasters.find((b) => b.id === id)).filter(Boolean);
+  if (headBlasters.length && headBlasters.every((b) => b!.iceHp > 0)) {
+    problems.push(
+      `Đầu của mọi hàng đều bọc băng (${headBlasters.map((b) => `${b!.id}: ${b!.iceHp}`).join(', ')}) — ` +
+        `không bấm được khẩu nào ngay từ đầu, mà băng chỉ tan khi có khẩu được nhấc lên. Chừa ít ` +
+        `nhất một hàng có khẩu đầu không băng.`,
+    );
+  }
+
+  // Nhiều nhất cũng chỉ nhấc được (số súng - 1) lượt trước khi tới lượt khẩu này.
+  const tooMuchIce = blasters.filter((b) => b.iceHp > 0 && b.iceHp > blasters.length - 1);
+  if (tooMuchIce.length) {
+    problems.push(
+      `Băng dày hơn số lượt bấm có thể có: ${tooMuchIce
+        .map((b) => `${b.id} (iceHp ${b.iceHp} > ${blasters.length - 1} lượt)`)
+        .join(', ')} — băng này không bao giờ tan hết.`,
+    );
+  }
+
+  // ---- Cơ chế Key & Lock ----
+  const locks = blasters.filter((b) => b.type === BLASTER_TYPE_LOCK);
+  const keys = blasters.filter((b) => b.type === BLASTER_TYPE_KEY);
+  if (locks.length > keys.length) {
+    problems.push(
+      `${locks.length} ổ khoá mà chỉ có ${keys.length} chìa — thừa ${locks.length - keys.length} ổ ` +
+        `không bao giờ mở được, mọi khẩu xếp sau chúng cũng kẹt theo.`,
+    );
+  }
+  // Chìa nằm sau chính ổ mà nó phải mở thì vô nghĩa; ca chắc chắn hỏng là MỌI hàng đều bắt đầu bằng
+  // ổ khoá — lúc đó không rút nổi khẩu nào để lấy chìa.
+  if (locks.length) {
+    const headIds = dockColumns.filter((c) => c.length).map((c) => c[0]);
+    const headBlasters = headIds.map((id) => blasters.find((b) => b.id === id)).filter(Boolean);
+    if (headBlasters.length && headBlasters.every((b) => b!.type === BLASTER_TYPE_LOCK)) {
+      problems.push(
+        `Đầu của mọi hàng đều là ổ khoá (${headBlasters.map((b) => b!.id).join(', ')}) — không rút ` +
+          `được khẩu nào nên chẳng bao giờ lấy được chìa. Chừa một hàng có khẩu đầu không phải ổ khoá.`,
+      );
+    }
+  }
+
   // ---- Cơ chế Connected ----
   const byIdMap = new Map(blasters.map((b) => [b.id, b]));
   const selfLinked: number[] = [];
@@ -337,17 +389,23 @@ export function validateShooters(
       }
       if (blaster.id > other) continue; // mỗi cặp chỉ báo một lần
 
-      // Hai khẩu nối nhau phải cùng lúc lên đầu hàng mới bay lên được. Nằm CÙNG MỘT HÀNG là chắc
-      // chắn không xong: mỗi hàng chỉ có một đầu hàng, nên cặp này không bao giờ rút được.
-      //
-      // Còn lệch BẬC thì vẫn chơi được (các hàng vơi nhanh chậm khác nhau nên hai khẩu vẫn có lúc
-      // cùng ở đầu hàng) — đã thử mô phỏng đúng như vậy. Việc lệch bậc chỉ trái quy ước dựng level,
-      // nên nó nằm ở `connectionWarnings`, không phải lỗi chặn.
+      // Hai khẩu nối nhau phải cùng lúc rút lên khoang được:
+      //  - Khác hàng: được, kể cả lệch bậc (các hàng vơi nhanh chậm khác nhau nên vẫn có lúc cả hai
+      //    cùng ở đầu hàng). Lệch bậc chỉ trái quy ước dựng level -> `connectionWarnings`.
+      //  - Cùng hàng, ĐỨNG SÁT nhau: được — nhấc khẩu trước thì khẩu sau tự lên theo.
+      //  - Cùng hàng, giữa còn khẩu khác chen vào: hỏng — khẩu bị kẹt ở giữa không đi cùng được,
+      //    nên cặp này không bao giờ cùng lên khoang.
       const here = dockPositionOf(dockColumns, blaster.id);
       const there = dockPositionOf(dockColumns, other);
       if (!here || !there) continue; // đã có lỗi "chưa xếp hàng" ở trên, không báo trùng
       if (here[0] === there[0]) {
-        badSlot.push(`${blaster.id}↔${other} (đều ở hàng ${here[0] + 1})`);
+        const gap = Math.abs(here[1] - there[1]);
+        if (gap > 1) {
+          badSlot.push(
+            `${blaster.id}↔${other} (hàng ${here[0] + 1}, bậc ${here[1] + 1} và ${there[1] + 1}, ` +
+              `cách nhau ${gap - 1} khẩu)`,
+          );
+        }
       }
     }
   }
@@ -365,8 +423,9 @@ export function validateShooters(
   }
   if (badSlot.length) {
     problems.push(
-      `Súng nối nhau nằm cùng một hàng: ${badSlot.join(', ')} — mỗi hàng chỉ có một đầu hàng nên ` +
-        `cặp này không bao giờ cùng lên khoang được. Chuyển một khẩu sang hàng khác.`,
+      `Súng nối nhau ở cùng hàng nhưng không đứng sát nhau: ${badSlot.join(', ')} — khẩu chen giữa ` +
+        `không đi cùng được nên cặp này không bao giờ cùng lên khoang. Xếp hai khẩu sát nhau, hoặc ` +
+        `chuyển một khẩu sang hàng khác.`,
     );
   }
 

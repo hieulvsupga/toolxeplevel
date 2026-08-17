@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
-import { VoxelGrid, buildInstanceData } from '@voxel/core';
+import { VoxelGrid, WALL_HEX, buildInstanceData } from '@voxel/core';
 import { useEditor } from '../store';
 import { useLayers } from '../lib/useLayers';
+import { rockMaps, rockShade } from '../lib/rockTexture';
 import { beginDragFace, useDrag } from './dragStore';
 import { useHoverBlock } from './hoverStore';
 import { useInput } from './input';
@@ -23,14 +24,20 @@ interface VoxelsProps {
   onHover: (cell: Cell | null) => void;
 }
 
+interface ChunkData {
+  count: number;
+  positions: [number, number, number][];
+  cells: Cell[];
+  colors: string[];
+}
+
+const EMPTY_CHUNK: ChunkData = { count: 0, positions: [], cells: [], colors: [] };
+
 export function Voxels({ onHover }: VoxelsProps) {
   const grid = useEditor((s) => s.grid);
   const version = useEditor((s) => s.version);
-  const mode = useEditor((s) => s.mode);
   const colorFilter = useEditor((s) => s.colorFilter);
   const { hiddenVoxels } = useLayers();
-
-  const meshRef = useRef<THREE.InstancedMesh>(null);
 
   // Rebuild dữ liệu instance mỗi khi grid đổi (theo version). Lọc theo màu và theo layer bị tắt.
   const data = useMemo(() => {
@@ -50,6 +57,55 @@ export function Voxels({ onHover }: VoxelsProps) {
     }
     return { count: positions.length, positions, cells, colors };
   }, [grid, version, colorFilter, hiddenVoxels]);
+
+  // Tách tường ra mesh riêng để nó đeo được vật liệu đá: một instancedMesh chỉ có đúng một material,
+  // nên muốn tường trông khác hẳn thì phải là hai mesh.
+  const [blocks, walls] = useMemo(() => {
+    const wallHex = WALL_HEX.toUpperCase();
+    let hasWall = false;
+    for (const c of data.colors) {
+      if (c.toUpperCase() === wallHex) {
+        hasWall = true;
+        break;
+      }
+    }
+    if (!hasWall) return [data as ChunkData, EMPTY_CHUNK];
+
+    const a: ChunkData = { count: 0, positions: [], cells: [], colors: [] };
+    const b: ChunkData = { count: 0, positions: [], cells: [], colors: [] };
+    for (let i = 0; i < data.count; i++) {
+      const target = data.colors[i].toUpperCase() === wallHex ? b : a;
+      target.positions.push(data.positions[i]);
+      target.cells.push(data.cells[i]);
+      target.colors.push(data.colors[i]);
+    }
+    a.count = a.positions.length;
+    b.count = b.positions.length;
+    return [a, b];
+  }, [data]);
+
+  return (
+    <>
+      <VoxelChunk data={blocks} onHover={onHover} />
+      <VoxelChunk data={walls} onHover={onHover} wall />
+    </>
+  );
+}
+
+/** Một mẻ khối cùng vật liệu. Tách ra để tường và khối màu dùng chung đúng logic chuột/hover. */
+function VoxelChunk({
+  data,
+  onHover,
+  wall = false,
+}: {
+  data: ChunkData;
+  onHover: (cell: Cell | null) => void;
+  wall?: boolean;
+}) {
+  const mode = useEditor((s) => s.mode);
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const rock = useMemo(() => (wall ? rockMaps() : null), [wall]);
+
   const cellsRef = useRef(data.cells);
   cellsRef.current = data.cells;
   const colorsRef = useRef(data.colors);
@@ -76,6 +132,11 @@ export function Voxels({ onHover }: VoxelsProps) {
       tmpMatrix.setPosition(px, py, pz);
       mesh.setMatrixAt(i, tmpMatrix);
       tmpColor.set(data.colors[i]);
+      // Tường: lệch sắc độ theo toạ độ ô cho ra "nhiều tảng đá" thay vì một mảng phẳng cùng vân.
+      if (wall) {
+        const [cx, cy, cz] = data.cells[i];
+        tmpColor.multiplyScalar(rockShade(cx, cy, cz));
+      }
       mesh.setColorAt(i, tmpColor);
     }
     mesh.count = data.count;
@@ -86,7 +147,7 @@ export function Voxels({ onHover }: VoxelsProps) {
     // sẽ bị bỏ qua -> chuột chỉ vào khối bị "miss".
     mesh.computeBoundingSphere();
     mesh.computeBoundingBox();
-  }, [data, capacity]);
+  }, [data, capacity, wall]);
 
   const targetCell = (e: ThreeEvent<PointerEvent>): Cell | null => {
     if (e.instanceId == null || !e.face) return null;
@@ -149,13 +210,28 @@ export function Voxels({ onHover }: VoxelsProps) {
       onPointerOut={clearHover}
     >
       <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial
-        roughness={0.75}
-        metalness={0.05}
-        polygonOffset
-        polygonOffsetFactor={1}
-        polygonOffsetUnits={1}
-      />
+      {rock ? (
+        // Đá: nhám hết cỡ, không ánh kim, thêm bump cho mặt gồ ghề — nhìn là biết ngay không phải
+        // khối màu bắn được.
+        <meshStandardMaterial
+          map={rock.map}
+          bumpMap={rock.bump}
+          bumpScale={0.4}
+          roughness={1}
+          metalness={0}
+          polygonOffset
+          polygonOffsetFactor={1}
+          polygonOffsetUnits={1}
+        />
+      ) : (
+        <meshStandardMaterial
+          roughness={0.75}
+          metalness={0.05}
+          polygonOffset
+          polygonOffsetFactor={1}
+          polygonOffsetUnits={1}
+        />
+      )}
     </instancedMesh>
   );
 }
