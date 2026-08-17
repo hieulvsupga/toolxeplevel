@@ -1,12 +1,19 @@
 import * as THREE from 'three';
 import { useThree, type ThreeEvent } from '@react-three/fiber';
+import { Line } from '@react-three/drei';
 import { useEditor } from '../store';
 import type { Cell } from './Voxels';
+import { AXIS_X_DIM, AXIS_Y_DIM } from './axisColors';
 import { beginDragGround, useDrag } from './dragStore';
 import { useHoverBlock } from './hoverStore';
 import { useInput } from './input';
 
 const SIZE = 64;
+const HALF = SIZE / 2;
+
+// Màu các ô lưới sàn. Hai đường trục chính không dùng màu này nữa mà lấy màu trục
+// (đỏ/xanh lá) giống gizmo, nên gridHelper tô đều một màu cho mọi đường.
+const GRID_LINE_COLOR_DIM = '#2f2f38';
 
 interface GroundProps {
   onHover: (cell: Cell | null) => void;
@@ -30,26 +37,46 @@ export function Ground({ onHover }: GroundProps) {
     <group>
       {/* gridHelper nằm sẵn trong mặt XZ; xoay 90° quanh X để đưa về mặt XY của scene Z-up. */}
       <gridHelper
-        args={[SIZE, SIZE, '#4a4a55', '#2f2f38']}
+        args={[SIZE, SIZE, GRID_LINE_COLOR_DIM, GRID_LINE_COLOR_DIM]}
         rotation={[Math.PI / 2, 0, 0]}
         position={[0, 0, 0.001]}
+      />
+      {/* Trục X đỏ, trục Y xanh lá — cùng màu với gizmo góc màn hình và marker gốc
+          toạ độ, để nhìn sàn là biết ngay đang ở hướng nào. Nhích lên trên lưới
+          một chút cho khỏi z-fight với đường lưới đi qua gốc. */}
+      <Line
+        points={[
+          [-HALF, 0, 0.002],
+          [HALF, 0, 0.002],
+        ]}
+        color={AXIS_X_DIM}
+        lineWidth={2}
+      />
+      <Line
+        points={[
+          [0, -HALF, 0.002],
+          [0, HALF, 0.002],
+        ]}
+        color={AXIS_Y_DIM}
+        lineWidth={2}
       />
       <mesh
         onPointerDown={(e) => {
           if (e.button !== 0) return;
           const { rotate, pan, erase } = useInput.getState();
           if (rotate || pan) return; // nhường cho camera
-          if (erase || mode !== 'place') return; // trên sàn không có gì để xóa
+          // Trên sàn không có gì để xóa/sơn; chỉ đặt khối hoặc quét vùng chọn.
+          if (erase || (mode !== 'place' && mode !== 'select')) return;
           e.stopPropagation();
           const [x, y, z] = toCell(e);
-          beginDragGround(x, y, 'place', z);
+          beginDragGround(x, y, mode, z);
         }}
         onPointerMove={(e) => {
           if (useDrag.getState().drag) return; // đang kéo -> khỏi tính hover
           // Tới được đây nghĩa là tia không trúng khối nào (khối gần hơn sẽ chặn sự kiện lại),
           // nên chắc chắn không còn khối nào đang được trỏ.
           useHoverBlock.getState().setBlock(null);
-          if (mode !== 'place') {
+          if (mode !== 'place' && mode !== 'select') {
             onHover(null);
             return;
           }

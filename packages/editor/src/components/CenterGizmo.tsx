@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { recenterOffset } from '@voxel/core';
 import { useEditor } from '../store';
+import { AXIS_X, AXIS_Y, AXIS_Z } from './axisColors';
 
 /**
  * Marker gốc toạ độ ("center"): điểm mà file .asset coi là (0,0,0).
@@ -37,9 +38,9 @@ export function CenterGizmo() {
         <sphereGeometry args={[0.11, 16, 16]} />
         <meshBasicMaterial color="#ffffff" depthTest={false} transparent />
       </mesh>
-      {axis([2 * L, t, t], '#ff5470')}
-      {axis([t, 2 * L, t], '#8bd450')}
-      {axis([t, t, 2 * L], '#4b86c9')}
+      {axis([2 * L, t, t], AXIS_X)}
+      {axis([t, 2 * L, t], AXIS_Y)}
+      {axis([t, t, 2 * L], AXIS_Z)}
     </group>
   );
 }

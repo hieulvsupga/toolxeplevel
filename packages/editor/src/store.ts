@@ -2,8 +2,9 @@ import { create } from 'zustand';
 import {
   DEFAULT_LEVEL_META,
   GAME_PALETTE,
+  MAX_DOCK_COUNT,
   VoxelGrid,
-  autoShooters,
+  autoBuildSearch,
   blockCountsByColor,
   fromJSON,
   gridBounds,
@@ -13,13 +14,15 @@ import {
   parseUnityAsset,
   toJSON,
   toggleConnection,
+  type AutoBuildOptions,
+  type AutoBuildSearchResult,
   type BlasterEntry,
   type LevelMeta,
   type Vec3,
   type Voxel,
 } from '@voxel/core';
 
-export type ToolMode = 'place' | 'remove' | 'paint';
+export type ToolMode = 'place' | 'remove' | 'paint' | 'select';
 
 type Cell = [number, number, number];
 
@@ -34,6 +37,20 @@ interface Change {
 
 /** Một thao tác = 1 nhóm thay đổi (fill cả vùng cũng chỉ 1 lần undo). */
 type Batch = Change[];
+
+/**
+ * Tham số tạo nhanh súng. `startId`/`random` do store tự lo; `grid`/`dockCount` thì store
+ * đọc từ chính state của nó, UI không phải truyền lại.
+ */
+export type AutoBuildInput = Omit<AutoBuildOptions, 'startId' | 'random'>;
+
+/** Một voxel trong cụm đã copy — toạ độ tính từ góc nhỏ nhất của cụm. */
+export interface RelVoxel {
+  dx: number;
+  dy: number;
+  dz: number;
+  voxel: Voxel;
+}
 
 const AUTOSAVE_KEY = 'voxel-level-autosave';
 const META_KEY = 'voxel-level-meta';
@@ -104,8 +121,12 @@ interface EditorState {
   removeBlaster: (id: number) => void;
   /** Dời súng sang hàng khác / đổi vị trí trong hàng. `index` âm hoặc quá dài = về cuối hàng. */
   moveBlaster: (id: number, row: number, index: number) => void;
-  /** Sinh sẵn bộ súng khớp số khối từng màu, ghi đè bộ đang có. */
-  autoBuildShooters: (rowCount: number, bulletsPerBlaster: number) => void;
+  /**
+   * Sinh sẵn bộ súng khớp số khối từng màu (kèm cơ chế được chọn), ghi đè bộ đang có.
+   * Tự chấm điểm để bám mức khó mục tiêu; trả về điểm đạt được, số cơ chế dựng được và
+   * ghi chú chỗ dựng thiếu / chỗ thang bị kẹt, để hiện lại cho người dựng level.
+   */
+  autoBuildShooters: (options: AutoBuildInput) => Omit<AutoBuildSearchResult, 'setup'>;
   clearShooters: () => void;
   /** Nối / bỏ nối hai súng (cơ chế Connected) — luôn ghi cả hai chiều. */
   toggleBlasterConnection: (idA: number, idB: number) => void;
@@ -128,6 +149,13 @@ interface EditorState {
   remove: (x: number, y: number, z: number) => void;
   /** Dán một loạt voxel nhiều màu (dùng cho import ảnh) — gộp 1 undo. */
   stampVoxels: (items: { x: number; y: number; z: number; color: string }[]) => void;
+  /**
+   * Dời các ô đi một khoảng (cắt chỗ cũ, ghi chỗ mới), gộp 1 undo. Vùng nguồn và
+   * vùng đích chồng nhau vẫn đúng vì tính trạng thái cuối của từng ô trước khi ghi.
+   */
+  moveCells: (cells: Cell[], dx: number, dy: number, dz: number) => void;
+  /** Dán một cụm voxel (toạ độ tương đối) vào gốc `at`, gộp 1 undo. */
+  pasteVoxels: (items: RelVoxel[], at: Cell) => void;
   undo: () => void;
   redo: () => void;
   clear: () => void;
@@ -139,6 +167,28 @@ interface EditorState {
 function applyChange(grid: VoxelGrid, ch: Change, voxel: Voxel | undefined) {
   if (voxel) grid.set(ch.x, ch.y, ch.z, voxel);
   else grid.delete(ch.x, ch.y, ch.z);
+}
+
+/**
+ * Ghi trạng thái CUỐI của từng ô vào grid rồi trả về batch undo. Nhận sẵn danh sách
+ * "ô -> voxel mới" (undefined = xoá) nên chỗ gọi được phép tính đè lẫn nhau trước khi
+ * ghi — cần cho việc dời cụm khối mà vùng nguồn/đích chồng lên nhau.
+ */
+function applyTargets(
+  grid: VoxelGrid,
+  targets: { x: number; y: number; z: number; after?: Voxel }[],
+): Batch {
+  const changes: Batch = [];
+  for (const t of targets) {
+    const before = grid.get(t.x, t.y, t.z);
+    if (!before && !t.after) continue;
+    if (before && t.after && before.color === t.after.color && before.type === t.after.type) {
+      continue;
+    }
+    applyChange(grid, t, t.after);
+    changes.push({ x: t.x, y: t.y, z: t.z, before, after: t.after });
+  }
+  return changes;
 }
 
 // Trục đứng là z, nên hai mặt đối xứng đứng là x=0 và y=0.
@@ -265,10 +315,15 @@ export const useEditor = create<EditorState>((set, get) => ({
       return { dockColumns };
     }),
 
-  autoBuildShooters: (rowCount, bulletsPerBlaster) => {
-    const { grid } = get();
-    const setup = autoShooters(blockCountsByColor(grid), { rowCount, bulletsPerBlaster });
+  autoBuildShooters: (options) => {
+    const { grid, levelMeta } = get();
+    const { setup, ...rest } = autoBuildSearch(blockCountsByColor(grid), {
+      ...options,
+      grid,
+      dockCount: levelMeta.dockCount,
+    });
     set({ blasters: setup.blasters, dockColumns: setup.dockColumns });
+    return rest;
   },
 
   clearShooters: () => set({ blasters: [], dockColumns: [] }),
@@ -395,6 +450,44 @@ export const useEditor = create<EditorState>((set, get) => ({
     });
   },
 
+  moveCells: (cells, dx, dy, dz) => {
+    if (!dx && !dy && !dz) return;
+    const { grid, undoStack } = get();
+    const targets = new Map<string, { x: number; y: number; z: number; after?: Voxel }>();
+    // Ô nguồn thành trống trước...
+    for (const [x, y, z] of cells) {
+      if (!grid.has(x, y, z)) continue;
+      targets.set(VoxelGrid.key(x, y, z), { x, y, z, after: undefined });
+    }
+    // ...rồi ô đích ghi đè lên, nên phần chồng nhau giữ được khối thay vì bị xoá.
+    for (const [x, y, z] of cells) {
+      const v = grid.get(x, y, z);
+      if (!v) continue;
+      const tx = x + dx;
+      const ty = y + dy;
+      const tz = z + dz;
+      targets.set(VoxelGrid.key(tx, ty, tz), { x: tx, y: ty, z: tz, after: { ...v } });
+    }
+    const changes = applyTargets(grid, [...targets.values()]);
+    if (!changes.length) return;
+    set({ version: get().version + 1, undoStack: [...undoStack, changes], redoStack: [] });
+  },
+
+  pasteVoxels: (items, [ax, ay, az]) => {
+    const { grid, undoStack } = get();
+    const changes = applyTargets(
+      grid,
+      items.map(({ dx, dy, dz, voxel }) => ({
+        x: ax + dx,
+        y: ay + dy,
+        z: az + dz,
+        after: { ...voxel },
+      })),
+    );
+    if (!changes.length) return;
+    set({ version: get().version + 1, undoStack: [...undoStack, changes], redoStack: [] });
+  },
+
   undo: () => {
     const { grid, undoStack, redoStack } = get();
     const batch = undoStack[undoStack.length - 1];
@@ -453,9 +546,21 @@ export const useEditor = create<EditorState>((set, get) => ({
       centerOverride = { x: 0, y: 0, z: dz };
     }
 
+    // Khoang chờ của game chỉ có 5 ô. File ghi nhiều hơn thì kẹp lại, không thì mọi phép kiểm
+    // (thử giải, chấm độ khó) chạy trên một khoang rộng hơn thực tế và báo màn dễ hơn màn thật.
+    const dockWarnings: string[] = [];
+    let meta = parsed.meta;
+    if (meta.dockCount > MAX_DOCK_COUNT) {
+      dockWarnings.push(
+        `dockCount trong file là ${meta.dockCount}, mà khoang chờ của game chỉ có ${MAX_DOCK_COUNT} ô — ` +
+          `đã kẹp về ${MAX_DOCK_COUNT}.`,
+      );
+      meta = { ...meta, dockCount: MAX_DOCK_COUNT };
+    }
+
     set({
       grid,
-      levelMeta: parsed.meta,
+      levelMeta: meta,
       depthOverrides,
       recenter: true,
       centerOverride,
@@ -465,7 +570,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       undoStack: [],
       redoStack: [],
     });
-    return [...parsed.warnings, ...warnings];
+    return [...parsed.warnings, ...warnings, ...dockWarnings];
   },
 }));
 

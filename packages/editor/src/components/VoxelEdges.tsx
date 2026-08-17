@@ -23,7 +23,7 @@ const EDGES: [number, number, number, number, number, number][] = [
   [0, 1, 0, 0, 1, 1],
 ];
 
-/** Viền đen ở cạnh mỗi khối để phân biệt rõ các cube cạnh nhau. */
+/** Viền mờ (cùng tông lưới sàn) ở cạnh mỗi khối để phân biệt các cube cạnh nhau. */
 export function VoxelEdges() {
   const grid = useEditor((s) => s.grid);
   const version = useEditor((s) => s.version);
@@ -55,7 +55,9 @@ export function VoxelEdges() {
   return (
     <lineSegments frustumCulled={false}>
       <bufferGeometry ref={geomRef} />
-      <lineBasicMaterial color="#0b0b0e" transparent opacity={0.4} />
+      {/* Nét tối rất nhạt: đọc như vệt bóng ở khe giữa các khối, không chói trên
+          màu sáng như nét trắng, cũng không thành khung đen như opacity cao. */}
+      <lineBasicMaterial color="#000000" transparent opacity={0.15} />
     </lineSegments>
   );
 }

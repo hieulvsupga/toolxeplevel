@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  MAX_DOCK_COUNT,
   WALL_COLOR_ID,
   blockCountsByColorFromLayers,
   buildLayers,
@@ -91,8 +92,13 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
   // Kiểm phần súng ngay tại đây thay vì chỉ trong bảng Blaster: file xuất ra mà đạn không khớp số
   // khối thì màn không thắng được, và lỗi đó chỉ lộ ra khi chơi thử trong Unity.
   const shooterProblems = useMemo(
-    () => validateShooters({ blasters, dockColumns }, blockCountsByColorFromLayers(layers)),
-    [blasters, dockColumns, layers],
+    () =>
+      validateShooters(
+        { blasters, dockColumns },
+        blockCountsByColorFromLayers(layers),
+        meta.dockCount,
+      ),
+    [blasters, dockColumns, layers, meta.dockCount],
   );
 
   const handleExport = () => {
@@ -184,10 +190,16 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
           </label>
           <label className="ex-row">
             <span className="ex-label">dockCount</span>
+            {/* Trần 5: khoang chờ của game chỉ có 5 ô. Cho gõ 8 thì tool mô phỏng một màn dễ
+                hơn màn thật, mà lỗi kiểu đó chỉ lộ ra khi test trong game. */}
             <input
               type="number"
+              min={1}
+              max={MAX_DOCK_COUNT}
               value={meta.dockCount}
-              onChange={(e) => set('dockCount', Number(e.target.value))}
+              onChange={(e) =>
+                set('dockCount', Math.min(MAX_DOCK_COUNT, Math.max(1, Number(e.target.value))))
+              }
             />
           </label>
         </div>

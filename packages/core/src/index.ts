@@ -5,5 +5,6 @@ export * from './render';
 export * from './gameColors';
 export * from './layers';
 export * from './blasters';
+export * from './autoBuild';
 export * from './unityAsset';
 export * from './solve';

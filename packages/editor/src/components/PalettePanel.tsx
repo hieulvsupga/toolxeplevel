@@ -8,6 +8,13 @@ import { useEditor } from '../store';
  * một ô "màu tự do" sẽ không ứng với ColorType nào và lúc xuất .asset sẽ phải đoán màu gần nhất.
  * Muốn đổi màu thì đổi ở phía Unity rồi cập nhật lại `GAME_COLORS` trong core.
  */
+// Tường (ColorType.None = 0) xếp cuối danh sách cho khớp dãy ô màu trên toolbar: nó là
+// sentinel, không phải một màu để tô. Cột id vẫn giữ số thật nên không mất thông tin ánh xạ.
+const ROWS = [
+  ...GAME_COLORS.filter((c) => c.id !== WALL_COLOR_ID),
+  ...GAME_COLORS.filter((c) => c.id === WALL_COLOR_ID),
+];
+
 export function PalettePanel() {
   const color = useEditor((s) => s.color);
   const setColor = useEditor((s) => s.setColor);
@@ -16,7 +23,7 @@ export function PalettePanel() {
     <div className="palette-panel">
       <div className="pal-title">ColorType ({GAME_COLORS.length})</div>
       <div className="pal-list">
-        {GAME_COLORS.map((c) => (
+        {ROWS.map((c) => (
           <button
             className={`pal-row${c.hex === color ? ' active' : ''}`}
             key={c.id}

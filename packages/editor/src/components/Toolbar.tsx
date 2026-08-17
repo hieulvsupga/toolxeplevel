@@ -115,6 +115,13 @@ export function Toolbar() {
         >
           🖌 Sơn
         </button>
+        <button
+          className={mode === 'select' ? 'active' : ''}
+          onClick={() => setMode('select')}
+          title="Chọn vùng rồi dời / copy / nhân bản / xóa cả cụm (S)"
+        >
+          ⬚ Chọn
+        </button>
       </div>
 
       {/* Đối xứng */}

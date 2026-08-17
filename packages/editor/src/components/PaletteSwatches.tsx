@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { WALL_HEX } from '@voxel/core';
 import { useEditor } from '../store';
 
@@ -13,13 +14,21 @@ export function PaletteSwatches() {
   const setColor = useEditor((s) => s.setColor);
   const palette = useEditor((s) => s.palette);
 
+  // Ô TƯỜNG xuống cuối dãy. Trong `GAME_PALETTE` nó là ô đầu vì ứng với ColorType.None = 0,
+  // nhưng nó không phải màu để tô nên đứng ở ô đầu — chỗ tay hay bấm nhất — là mời bấm nhầm.
+  // Chỉ đổi thứ tự HIỂN THỊ, không đụng tới thứ tự trong core (đó là ánh xạ enum của Unity).
+  const ordered = useMemo(
+    () => [...palette.filter((c) => c !== WALL_HEX), ...palette.filter((c) => c === WALL_HEX)],
+    [palette],
+  );
+
   return (
     <>
-      {palette.map((c, i) => {
+      {ordered.map((c) => {
         const wall = c === WALL_HEX;
         return (
           <button
-            key={i}
+            key={c}
             className={`swatch${c === color ? ' active' : ''}${wall ? ' swatch-wall' : ''}`}
             style={{ backgroundColor: c }}
             title={wall ? '🧱 Tường — khối không bắn được, dùng để bịt hướng bắn' : c}

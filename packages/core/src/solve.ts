@@ -23,13 +23,18 @@ import { WALL_COLOR_ID, gameColorById, matchGameColor } from './gameColors';
  *    vẫn che các khối sau nó và vẫn chặn vùng khí — đó chính là công dụng của nó: bịt một hướng để
  *    người chơi phải xoay sang góc khác. Khối bị tường quây kín thì không bao giờ bắn được.
  * 3. Mỗi hàng chờ chỉ với tới được súng ĐẦU hàng; súng đã rút ra thì nằm ở khoang chờ, tối đa
- *    `dockCount` súng cùng lúc.
- * 4. Súng bắn từng viên vào khối hở cùng màu. Hết đạn thì rời khoang, nhường chỗ.
+ *    `dockCount` súng cùng lúc (game chỉ có 5 ô — xem `MAX_DOCK_COUNT`).
+ * 4. Súng bắn từng viên vào khối hở cùng màu. HẾT VIỆC thì biến mất, chừa lại ô trống. "Hết việc"
+ *    tính theo ĐƠN VỊ rút chứ không theo từng khẩu:
+ *      - súng lẻ: cạn đạn là đi ngay;
+ *      - súng hai màu: phải cạn CẢ HAI túi mới đi;
+ *      - cụm nối nhau: phải MỌI thành viên cạn đạn thì cả cụm mới cùng biến mất — khẩu hết đạn
+ *        sớm vẫn tiếp tục chiếm ô khoang, chờ bạn nối của nó bắn xong.
  * 5. Súng nối nhau (`connectedBlasterIds`) là MỘT đơn vị: cả nhóm cùng lên khoang một lượt, nên
- *    phải đủ chỗ trống cho cả nhóm và mọi thành viên phải đang ở đầu hàng của nó. Lên khoang rồi
- *    thì mỗi súng bắn màu của riêng nó. Suy ra từ ConnectedBox.asset: cả 4 cặp đều là hai súng cùng
- *    một bậc ở hai hàng cạnh nhau, cùng số đạn, khác màu — tức là hai khẩu bị buộc vào nhau nên
- *    phải bay lên cùng lúc.
+ *    phải đủ chỗ trống cho cả nhóm (cụm 3 khẩu mà khoang chỉ còn 2 ô thì không nhấc được) và mọi
+ *    thành viên phải đang ở đầu hàng của nó. Lên khoang rồi thì mỗi súng bắn màu của riêng nó.
+ *    Suy ra từ ConnectedBox.asset: cả 4 cặp đều là hai súng cùng một bậc ở hai hàng cạnh nhau,
+ *    cùng số đạn, khác màu — tức là hai khẩu bị buộc vào nhau nên phải bay lên cùng lúc.
  * 6. Súng bọc băng (`iceHp` > 0) không bấm được. Mỗi LƯỢT BẤM (nhấc một khẩu — hoặc cả cặp nối
  *    nhau — lên khoang) làm băng của MỌI khẩu còn băng tan 1; về 0 thì bấm được.
  *    Khớp với IcedBlasterBox.asset: hai đầu hàng H1/H3 băng 10, mà H2 có đúng 12 khẩu để bấm trong
@@ -144,6 +149,12 @@ interface Queued {
   pools: Pool[];
   /** Thứ tự vào khoang — dùng để ưu tiên súng vào trước. */
   order: number;
+  /**
+   * Mã ĐƠN VỊ rút: các khẩu nối nhau được nhấc cùng lượt thì cùng mã này. Cả đơn vị chỉ
+   * biến mất khi MỌI thành viên bắn xong, nên một khẩu hết đạn sớm vẫn tiếp tục chiếm ô
+   * khoang — đúng luật game, và là chỗ khiến cụm nối nhau đắt hơn nhiều so với súng lẻ.
+   */
+  unit: number;
 }
 
 interface SimState {
@@ -397,6 +408,7 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
 
   const queue: Queued[] = [];
   let order = 0;
+  let unitSeq = 0;
   let picks = 0;
   let stalls = 0;
   let maxStalled = 0;
@@ -531,9 +543,19 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
       };
     }
 
-    // 1. Súng hết việc thì rời khoang (hết đạn, hoặc màu của nó không còn khối nào).
-    for (let i = queue.length - 1; i >= 0; i--) {
-      if (livePools(queue[i]).length === 0) {
+    // 1. Rời khoang theo ĐƠN VỊ rút, không theo từng khẩu: một khẩu hết đạn mà bạn nối của nó
+    //    còn đạn thì cả cụm vẫn nằm đó chiếm ô. Súng lẻ là đơn vị một khẩu nên rời ngay.
+    //    Súng hai màu phải cạn cả hai túi (`livePools` đã tính cả hai) mới coi là hết việc.
+    const doneUnits = new Set<number>();
+    const liveUnits = new Set<number>();
+    for (const q of queue) {
+      if (livePools(q).length === 0) doneUnits.add(q.unit);
+      else liveUnits.add(q.unit);
+    }
+    for (const unit of liveUnits) doneUnits.delete(unit);
+    if (doneUnits.size) {
+      for (let i = queue.length - 1; i >= 0; i--) {
+        if (!doneUnits.has(queue[i].unit)) continue;
         wastedBullets += queue[i].pools.reduce((s, p) => s + p.left, 0);
         queue.splice(i, 1);
       }
@@ -594,10 +616,11 @@ function simulate(input: SolveInput, policy: Policy): SimOutput {
         // Đẩy con trỏ theo SỐ thành viên ở mỗi hàng (nhóm có thể có 2 khẩu cùng một hàng), và đọc
         // hết vị trí trước khi đẩy để vị trí không bị lệch giữa chừng.
         const advance = new Map<number, number>();
+        const unit = unitSeq++;
         for (const id of bestGroup) {
           const at = pendingPosition(id)!;
           advance.set(at[0], (advance.get(at[0]) ?? 0) + 1);
-          queue.push({ id, pools: poolsOf(byId.get(id)!), order: order++ });
+          queue.push({ id, pools: poolsOf(byId.get(id)!), order: order++, unit });
         }
         for (const [column, count] of advance) cursor[column] += count;
         // Một lượt bấm = băng của mọi khẩu tan 1. Nhấc cả cặp nối nhau vẫn chỉ là MỘT lượt bấm.
@@ -938,6 +961,18 @@ const WEIGHTS = {
    * bấm như băng.
    */
   walls: 1,
+  /**
+   * Băng khoá cứng lượt bấm: khẩu bọc băng không bấm được cho tới khi băng tan, mà băng chỉ tan
+   * khi có khẩu khác được nhấc lên. Ba yếu tố dưới đây là cơ chế ĐÃ mô phỏng được, nên chúng không
+   * nằm trong `mechanics` (chỗ đó chỉ đếm cơ chế chưa mô phỏng). Không cho chúng trọng số riêng thì
+   * một màn nhồi kín băng/khoá vẫn bị chấm ngang màn trống trơn — chúng chỉ hiện ra rất nhẹ qua số
+   * lần chờ và độ bó lựa chọn.
+   */
+  ice: 1.5,
+  /** Ổ khoá chặn luôn mọi khẩu xếp sau nó trong hàng — nặng ngang băng. */
+  locks: 1.5,
+  /** Súng nối nhau phải cùng lên khoang một lượt, tức ăn 2 ô khoang cùng lúc. */
+  connected: 1,
   mechanics: 0.5,
 } as const;
 
@@ -1016,6 +1051,17 @@ export function rateDifficulty(input: SolveInput, result: SolveResult): Difficul
   }
   const mechanics = result.ignoredMechanics.length;
 
+  // Số đo của các cơ chế đã mô phỏng — tính theo TỈ LỆ trên số khẩu, không phải số tuyệt đối:
+  // 3 khẩu băng trong 6 khẩu là màn ngạt thở, trong 60 khẩu thì gần như không thấy.
+  const gunCount = Math.max(1, input.blasters.length);
+  const icedCount = input.blasters.filter((b) => b.iceHp > 0).length;
+  const avgIce = icedCount
+    ? input.blasters.reduce((s, b) => s + Math.max(0, b.iceHp), 0) / icedCount
+    : 0;
+  const lockCount = input.blasters.filter((b) => b.type === BLASTER_TYPE_LOCK).length;
+  const keyCount = input.blasters.filter((b) => b.type === BLASTER_TYPE_KEY).length;
+  const linkedCount = input.blasters.filter((b) => b.connectedBlasterIds.length > 0).length;
+
   const freedomPercent = Math.round(result.choiceFreedom * 100);
   const factors: DifficultyFactor[] = [
     {
@@ -1087,6 +1133,35 @@ export function rateDifficulty(input: SolveInput, result: SolveResult): Difficul
         : 'không có',
     },
     {
+      key: 'ice',
+      label: 'Súng bọc băng',
+      // 40% số khẩu bọc băng là kín thang: quá mức đó thì mô phỏng cũng khó tìm ra thứ tự bấm.
+      value: clamp01(icedCount / gunCount / 0.4),
+      weight: WEIGHTS.ice,
+      detail: icedCount
+        ? `${icedCount}/${gunCount} khẩu bọc băng, dày trung bình ${avgIce.toFixed(1)}`
+        : 'không có',
+    },
+    {
+      key: 'locks',
+      label: 'Ổ khoá',
+      // Ngưỡng thấp hơn băng: một ổ khoá chặn cả khúc hàng phía sau, 25% đã rất nặng.
+      value: clamp01(lockCount / gunCount / 0.25),
+      weight: WEIGHTS.locks,
+      detail: lockCount
+        ? `${lockCount} ổ khoá / ${keyCount} chìa trên ${gunCount} khẩu`
+        : 'không có',
+    },
+    {
+      key: 'connected',
+      label: 'Súng nối nhau',
+      value: clamp01(linkedCount / gunCount / 0.5),
+      weight: WEIGHTS.connected,
+      detail: linkedCount
+        ? `${linkedCount}/${gunCount} khẩu bị buộc vào khẩu khác`
+        : 'không có',
+    },
+    {
       key: 'hidden',
       label: 'Súng giấu màu',
       value: clamp01(input.blasters.length ? result.hiddenCount / input.blasters.length : 0),
@@ -1108,20 +1183,35 @@ export function rateDifficulty(input: SolveInput, result: SolveResult): Difficul
   const raw = factors.reduce((s, f) => s + f.value * f.weight, 0) / totalWeight;
   const score = result.winnable ? Math.round(raw * 100) / 10 : 10;
 
-  const label = !result.winnable
-    ? 'Không giải được'
-    : score < 2
-      ? 'Rất dễ'
-      : score < 4
-        ? 'Dễ'
-        : score < 6
-          ? 'Vừa'
-          : score < 8
-            ? 'Khó'
-            : 'Rất khó';
+  const label = result.winnable ? difficultyLabel(score) : 'Không giải được';
 
-  // Ánh xạ sang enum `LevelDifficulty` của game (0 Normal / 1 Hard / 2 VeryHard).
-  const suggestedDifficulty = score < 4 ? 0 : score < 7 ? 1 : 2;
+  return {
+    score,
+    label,
+    suggestedDifficulty: levelDifficultyForScore(score),
+    factors,
+  };
+}
 
-  return { score, label, suggestedDifficulty, factors };
+/** Tên gọi của một mức điểm trên thang 0..10. */
+export function difficultyLabel(score: number): string {
+  return score < 2
+    ? 'Rất dễ'
+    : score < 4
+      ? 'Dễ'
+      : score < 6
+        ? 'Vừa'
+        : score < 8
+          ? 'Khó'
+          : 'Rất khó';
+}
+
+/**
+ * Điểm 0..10 -> enum `LevelDifficulty` của game (0 Normal / 1 Hard / 2 VeryHard).
+ *
+ * Tách ra để chỗ tạo nhanh súng dùng đúng ngưỡng mà `rateDifficulty` đang chấm: hai chỗ
+ * lệch ngưỡng thì tool tự chấm một màn khác với difficulty mà chính nó vừa đặt vào file.
+ */
+export function levelDifficultyForScore(score: number): number {
+  return score < 4 ? 0 : score < 7 ? 1 : 2;
 }

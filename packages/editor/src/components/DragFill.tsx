@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { useEditor } from '../store';
-import { MAX_SIDE, clampSpan, regionCells, useDrag } from './dragStore';
+import { MAX_SIDE, clampSpan, dragBounds, regionCells, useDrag } from './dragStore';
+import { useSelection } from './selectionStore';
 
 const UP = new THREE.Vector3(0, 0, 1);
 
@@ -71,6 +72,13 @@ export function DragFill() {
       if (e.button !== 0) return;
       const d = useDrag.getState().drag;
       if (!d) return;
+      if (d.mode === 'select') {
+        // Chế độ chọn không sửa khối nào: chốt vùng lại để các thao tác sau (dời,
+        // copy, xoá) làm việc trên đó.
+        useSelection.getState().setRegion(dragBounds(d));
+        useDrag.getState().clear();
+        return;
+      }
       const { fill, paint, color } = useEditor.getState();
       const cells = regionCells(d);
       if (d.mode === 'remove') fill(cells, null);
@@ -80,7 +88,12 @@ export function DragFill() {
     };
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && useDrag.getState().drag) useDrag.getState().clear();
+      if (e.key === 'Escape' && useDrag.getState().drag) {
+        useDrag.getState().clear();
+        // Đánh dấu là Esc đã dùng để huỷ cú kéo: SelectionPanel cũng nghe Esc (để bỏ
+        // vùng chọn) và chạy sau, không có dấu này thì một lần Esc mất luôn cả hai.
+        e.preventDefault();
+      }
     };
 
     el.addEventListener('pointermove', onMove);

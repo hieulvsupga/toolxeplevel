@@ -256,8 +256,14 @@ body,
 }
 
 /* ---- Xuất LevelData (.asset) ---- */
-.ex-modal {
-  width: 440px;
+/*
+ * Phải viết `.modal.ex-modal` chứ không phải `.ex-modal`: khối `.modal { width: 340px }` nằm XA
+ * BÊN DƯỚI trong file này, cùng độ ưu tiên (1 class) nên nó thắng theo thứ tự và bảng Xuất luôn bị
+ * bó về 340px — đó là lý do nó vẫn hẹp dù `.ex-modal` ghi 440px. Thêm một class nữa cho ăn chắc.
+ * 660 = 440 × 1.5. `.modal` đã có max-width theo viewport nên màn hình nhỏ vẫn không tràn.
+ */
+.modal.ex-modal {
+  width: 660px;
 }
 
 .ex-head {
@@ -2249,4 +2255,295 @@ body,
 
 .hint b {
   color: #cfcfd6;
+}
+
+/* ---- Bảng thao tác vùng chọn (phải, dưới HUD toạ độ) ---- */
+.sel-hud {
+  position: absolute;
+  top: 120px;
+  right: 12px;
+  z-index: 20;
+  width: 214px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  color: #cfcfd6;
+  background: rgba(28, 28, 34, 0.92);
+  border: 1px solid #6b4a1f;
+  border-radius: 8px;
+  padding: 8px 10px;
+  backdrop-filter: blur(6px);
+}
+
+.sel-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sel-head b {
+  color: #ffb454;
+}
+
+/* Số đo: tabular-nums để con số không nhảy ngang khi dời từng ô. */
+.sel-dim {
+  color: #8a8a95;
+  font-variant-numeric: tabular-nums;
+}
+
+.sel-axes {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sel-axis {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sel-axis-name {
+  width: 14px;
+  font-weight: 600;
+}
+
+.sel-hud button {
+  flex: 1;
+  background: #2c2c34;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sel-hud button:hover {
+  background: #38384280;
+  border-color: #55555f;
+}
+
+.sel-hud button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.sel-hud .sel-dup {
+  flex: 0 0 26px;
+}
+
+.sel-hud .tb-danger:hover {
+  background: #5a2730;
+  border-color: #a3455a;
+}
+
+.sel-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sel-hint {
+  color: #8a8a95;
+  line-height: 1.5;
+}
+
+.sel-hint b {
+  color: #cfcfd6;
+}
+
+/* ---- Popup tạo nhanh súng theo màu khối ---- */
+/* Cũng viết kèm `.modal` như `.ex-modal` ở trên: đúng độ ưu tiên nên không phụ thuộc chỗ đặt
+   khối này so với `.modal { width: 340px }`. */
+.modal.ab-modal {
+  width: 420px;
+}
+
+.ab-diffs {
+  display: flex;
+  gap: 4px;
+}
+
+.ab-diffs button {
+  flex: 1;
+  background: #2c2c34;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 7px;
+  padding: 6px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ab-diffs button:hover {
+  background: #38384280;
+  border-color: #55555f;
+}
+
+.ab-diffs button.active {
+  background: #3b6ea5;
+  border-color: #4b86c9;
+}
+
+.ab-hint {
+  font-size: 11px;
+  color: #8a8a95;
+  line-height: 1.5;
+  margin-top: 5px;
+}
+
+.ab-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #cfcfd6;
+  margin-top: 7px;
+  cursor: pointer;
+}
+
+.ab-fields {
+  display: flex;
+  gap: 8px;
+}
+
+.ab-fields label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #9a9aa5;
+}
+
+.ab-fields input {
+  flex: 1;
+  min-width: 0;
+  background: #1c1c22;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 6px;
+  padding: 5px 7px;
+  font-size: 12px;
+}
+
+.ab-mechs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Cơ chế đang tắt vẫn đọc được phần mô tả, chỉ mờ đi để thấy ngay cái nào đang bật. */
+.ab-mech {
+  background: #1c1c22;
+  border: 1px solid #34343c;
+  border-radius: 7px;
+  padding: 6px 8px;
+  opacity: 0.55;
+}
+
+.ab-mech.on {
+  opacity: 1;
+  border-color: #4a4a56;
+}
+
+.ab-mech-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #e8e8ec;
+  cursor: pointer;
+}
+
+.ab-mech-name {
+  flex: 1;
+}
+
+.ab-mech-count {
+  width: 74px;
+  background: #22222a;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.ab-mech-unit {
+  width: 26px;
+  font-size: 11px;
+  color: #8a8a95;
+}
+
+.ab-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.ab-actions button {
+  flex: 1;
+  background: #2c2c34;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 7px;
+  padding: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ab-actions button:hover {
+  background: #38384280;
+  border-color: #55555f;
+}
+
+.ab-actions .bl-auto {
+  background: #3b6ea5;
+  border-color: #4b86c9;
+}
+
+.bl-note-warn {
+  color: #e8c07a;
+  margin-top: 3px;
+}
+
+/* Thang điểm khó 1..10 trong popup tạo nhanh. */
+.ab-score {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ab-score input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  accent-color: #4b86c9;
+}
+
+.ab-score-num {
+  font-size: 18px;
+  font-weight: 600;
+  color: #e8e8ec;
+  font-variant-numeric: tabular-nums;
+  min-width: 22px;
+  text-align: right;
+}
+
+.ab-score-max {
+  font-size: 11px;
+  color: #8a8a95;
+}
+
+.ab-score-label {
+  font-size: 12px;
+  color: #cfcfd6;
+  background: #1c1c22;
+  border: 1px solid #34343c;
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
 }

@@ -2,6 +2,8 @@ import { useCallback, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { GizmoHelper, GizmoViewport, OrbitControls } from '@react-three/drei';
 import { Voxels, type Cell } from './Voxels';
+import { AXIS_X, AXIS_Y, AXIS_Z } from './axisColors';
+import { SelectionBox } from './SelectionBox';
 import { VoxelEdges } from './VoxelEdges';
 import { Ground } from './Ground';
 import { HoverPreview } from './HoverPreview';
@@ -16,6 +18,8 @@ export function EditorScene() {
 
   // Chỉ re-render khi ô hover thật sự đổi (tránh setState mỗi pixel di chuột).
   const setHoverDedup = useCallback((c: Cell | null) => {
+    // Ô đích cũng đẩy ra store để phần dán cụm khối (SelectionPanel) đọc được.
+    useHoverBlock.getState().setTarget(c);
     setHover((prev) => {
       if (prev === c) return prev;
       if (prev && c && prev[0] === c[0] && prev[1] === c[1] && prev[2] === c[2]) {
@@ -50,13 +54,14 @@ export function EditorScene() {
         <VoxelEdges />
         <HoverPreview cell={hover} />
         <RegionPreview />
+        <SelectionBox />
         <DragFill />
         <CenterGizmo />
         <CameraRig />
         {/* Gizmo góc màn hình: click mặt để nhìn theo trục đó */}
         <GizmoHelper alignment="bottom-right" margin={[72, 72]}>
           <GizmoViewport
-            axisColors={['#ff5470', '#8bd450', '#4b86c9']}
+            axisColors={[AXIS_X, AXIS_Y, AXIS_Z]}
             labelColor="#111"
           />
         </GizmoHelper>

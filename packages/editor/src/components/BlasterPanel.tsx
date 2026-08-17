@@ -17,6 +17,7 @@ import {
   type SolveResult,
 } from '@voxel/core';
 import { useEditor } from '../store';
+import { AutoBuildDialog } from './AutoBuildDialog';
 
 interface BlasterPanelProps {
   onClose: () => void;
@@ -37,7 +38,7 @@ const MECHANICS = [
   {
     id: 'connected' as const,
     label: '🔗 Connected',
-    hint: 'Bấm 2 khẩu để nối chúng vào nhau (bấm lại cặp đã nối là bỏ nối). Hai khẩu nối nhau phải cùng lên khoang chờ một lượt.',
+    hint: 'Bấm 2 khẩu để nối chúng vào nhau (bấm lại cặp đã nối là bỏ nối). Cả cụm lên khoang chờ cùng một lượt nên phải còn đủ ô trống cho cả cụm, và chỉ biến mất khi MỌI khẩu trong cụm bắn xong — khẩu hết đạn trước vẫn tiếp tục chiếm ô.',
   },
   {
     id: 'ice' as const,
@@ -100,7 +101,6 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
   const changeBlasterId = useEditor((s) => s.changeBlasterId);
   const removeBlaster = useEditor((s) => s.removeBlaster);
   const moveBlaster = useEditor((s) => s.moveBlaster);
-  const autoBuildShooters = useEditor((s) => s.autoBuildShooters);
   const clearShooters = useEditor((s) => s.clearShooters);
   const toggleBlasterConnection = useEditor((s) => s.toggleBlasterConnection);
   const levelMeta = useEditor((s) => s.levelMeta);
@@ -108,6 +108,9 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [bulletsPerBlaster, setBulletsPerBlaster] = useState(40);
+  const [autoOpen, setAutoOpen] = useState(false);
+  /** Tóm tắt lần tạo nhanh gần nhất — để biết tool đã random ra những gì. */
+  const [autoSummary, setAutoSummary] = useState<{ text: string; notes: string[] } | null>(null);
   // Neo panel ngay dưới toolbar. Phải đo thay vì đặt cứng: toolbar xuống dòng theo bề rộng cửa sổ
   // (bảng màu 17 ô hay tràn thành 2 hàng), nên một con số cố định sẽ đè lên nó ở khổ này hoặc để
   // hở một khoảng trống ở khổ khác.
@@ -664,19 +667,10 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
           <button
             className="bl-auto"
             disabled={!shootableBlocks}
-            onClick={() => {
-              if (
-                blasters.length &&
-                !confirm(`Tạo lại sẽ thay toàn bộ ${blasters.length} súng đang có. Tiếp tục?`)
-              ) {
-                return;
-              }
-              autoBuildShooters(Math.max(1, rowCount), bulletsPerBlaster);
-              setSelectedId(null);
-            }}
-            title="Chia số khối từng màu thành các súng ~ số đạn ở trên, rồi rải đều ra các hàng"
+            onClick={() => setAutoOpen(true)}
+            title="Mở bảng tạo nhanh: chọn độ khó, cơ chế và số lượng từng cơ chế"
           >
-            ⚡ Tạo theo màu khối
+            ⚡ Tạo theo màu khối…
           </button>
           <button
             className="bl-icon-btn bl-danger"
@@ -687,6 +681,17 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
             🗑
           </button>
         </div>
+
+        {autoSummary && (
+          <div className="bl-note">
+            {autoSummary.text}
+            {autoSummary.notes.map((n) => (
+              <div className="bl-note-warn" key={n}>
+                {n}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Các hàng chờ: mỗi hàng là một cột dọc, ô trên cùng là đầu hàng. */}
         {rowCount === 0 ? (
@@ -940,6 +945,22 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
             vấn đề. `validateShooters()` / `connectionWarnings()` vẫn nằm trong core (bảng Xuất
             .asset còn dùng), nên bật lại chỗ này lúc nào cũng được. */}
       </div>
+
+      {autoOpen && (
+        <AutoBuildDialog
+          defaultRowCount={rowCount || 3}
+          defaultBullets={bulletsPerBlaster}
+          // Mở ở đúng điểm mà lần Thử giải gần nhất chấm được (nếu có) — chỉnh từ mức thật
+          // của màn dễ hơn là đoán lại từ đầu.
+          defaultScore={check ? Math.round(check.rating.score) : 5}
+          shootableBlocks={shootableBlocks}
+          onClose={() => setAutoOpen(false)}
+          onDone={(text, notes) => {
+            setAutoSummary({ text, notes });
+            setSelectedId(null);
+          }}
+        />
+      )}
     </div>,
     document.body,
   );

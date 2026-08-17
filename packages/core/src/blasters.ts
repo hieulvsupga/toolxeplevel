@@ -15,6 +15,15 @@ export const BLASTER_TYPES: { id: number; name: string; label: string }[] = [
   { id: 8, name: 'StopSign', label: 'Biển stop' },
 ];
 
+/**
+ * Khoang chờ của game chỉ có 5 ô — trần cứng, không phải giá trị mặc định.
+ *
+ * Quan trọng với mọi phép kiểm: 5 khẩu đã lên khoang mà không khẩu nào khớp khối hở nào là THUA,
+ * nên đặt `dockCount` cao hơn thật là tự mô phỏng một màn dễ hơn màn người chơi gặp. Cũng là trần
+ * cho cụm nối nhau: cụm đông hơn số ô thì không bao giờ nhấc lên được.
+ */
+export const MAX_DOCK_COUNT = 5;
+
 export const BLASTER_TYPE_NORMAL = 0;
 export const BLASTER_TYPE_KEY = 1;
 export const BLASTER_TYPE_LOCK = 2;
@@ -271,6 +280,7 @@ export function colorBalance(
 export function validateShooters(
   setup: ShooterSetup,
   blockCounts: Map<number, number>,
+  dockCount: number = MAX_DOCK_COUNT,
 ): string[] {
   const problems: string[] = [];
   const { blasters, dockColumns } = setup;
@@ -426,6 +436,17 @@ export function validateShooters(
       `Súng nối nhau ở cùng hàng nhưng không đứng sát nhau: ${badSlot.join(', ')} — khẩu chen giữa ` +
         `không đi cùng được nên cặp này không bao giờ cùng lên khoang. Xếp hai khẩu sát nhau, hoặc ` +
         `chuyển một khẩu sang hàng khác.`,
+    );
+  }
+
+  // Cả cụm nối nhau phải lên khoang CÙNG MỘT LƯỢT, nên cụm đông hơn số ô khoang thì không bao giờ
+  // nhấc được — không cần mô phỏng cũng biết chắc.
+  const tooBig = connectedGroups(blasters).filter((g) => g.length > dockCount);
+  if (tooBig.length) {
+    problems.push(
+      `Cụm nối nhau đông hơn khoang chờ (${dockCount} ô): ${tooBig
+        .map((g) => `${g.join('+')} (${g.length} khẩu)`)
+        .join(', ')} — cả cụm phải lên cùng lượt nên không bao giờ nhấc được. Bỏ nối bớt.`,
     );
   }
 

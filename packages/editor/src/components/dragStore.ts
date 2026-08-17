@@ -9,7 +9,7 @@ import type { Cell } from './Voxels';
  *
  * Trục đứng là Z (trùng hệ trục của LevelData), nên "tầng" ở đây là z chứ không phải y.
  */
-export type DragMode = 'place' | 'remove' | 'paint';
+export type DragMode = 'place' | 'remove' | 'paint' | 'select';
 
 export interface DragState {
   mode: DragMode;
@@ -67,6 +67,16 @@ export function regionCells(d: DragState): Cell[] {
     }
   }
   return cells;
+}
+
+/** Hai góc (đều tính vào vùng) của vùng đang kéo. */
+export function dragBounds(d: DragState): { min: Cell; max: Cell } {
+  const [xMin, xMax] = clampSpan(d.anchorX, d.curX);
+  const [yMin, yMax] = clampSpan(d.anchorY, d.curY);
+  return {
+    min: [xMin, yMin, Math.min(d.loZ, d.hiZ)],
+    max: [xMax, yMax, Math.max(d.loZ, d.hiZ)],
+  };
 }
 
 /** Kích thước/tâm hộp bao vùng (dùng cho preview). */
