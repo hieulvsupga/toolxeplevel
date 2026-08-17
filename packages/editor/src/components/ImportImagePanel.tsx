@@ -1,19 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditor } from '../store';
+import { PaletteSwatches } from './PaletteSwatches';
 import { yUpToEditorAll } from '../lib/axis';
+import { fillGridCell } from '../lib/wallCell';
 import {
   crossSectionZRange,
   detectGrid,
   hexToRgb,
   LAYER_SHAPES,
   loadImageData,
-  PROFILES,
-  profileFactor,
-  rowZLayers,
   sampleGrid,
   snapToPalette,
-  type DepthProfile,
+  zLayers,
   type GridInfo,
   type LayerShape,
 } from '../lib/imageVoxelizer';
@@ -37,7 +36,6 @@ const rgbToHex = (c: [number, number, number]) =>
 export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps) {
   const palette = useEditor((s) => s.palette);
   const color = useEditor((s) => s.color);
-  const setColor = useEditor((s) => s.setColor);
   const stampVoxels = useEditor((s) => s.stampVoxels);
 
   const [img, setImg] = useState<ImageData | null>(null);
@@ -49,10 +47,9 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
-  // Độ dày (số lớp Z) + dáng khối phân bố độ dày theo chiều cao.
+  // Độ dày (số lớp Z) — nay là một ô của nhóm lưới, mặc định 1 (ảnh phẳng đúng 1 lớp).
   const [thickness, setThickness] = useState(1);
   const [thicknessText, setThicknessText] = useState('1');
-  const [profile, setProfile] = useState<DepthProfile>('box');
 
   // Định hình tầng: mỗi hàng thành mặt cắt tròn/vuông (bỏ qua độ dày khi bật).
   const [layerShape, setLayerShape] = useState<LayerShape>('off');
@@ -61,7 +58,9 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
 
   // Lưới màu GỐC (hex) đang chỉnh; null = ô trống. Màu hiển thị/tạo tuỳ colorMode.
   const [cells, setCells] = useState<(string | null)[]>([]);
-  const [colorMode, setColorMode] = useState<ColorMode>('palette');
+  // Cố định ở 'palette': ô chọn "Màu ảnh / Bảng màu" đang tạm ẩn nên không còn gì đổi giá trị này.
+  // Vẫn giữ biến (thay vì gỡ sạch) để mọi chỗ tính màu bên dưới không phải sửa khi bật lại.
+  const colorMode: ColorMode = 'palette';
   const [editMode, setEditMode] = useState<EditMode>('none');
   // Nền preview: tối (mặc định) hoặc sáng cho dễ nhìn ảnh tối.
   const [lightBg, setLightBg] = useState(false);
@@ -116,14 +115,8 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
     return { rowCount, minR, maxR };
   }, [cells, cols, rows]);
 
-  // Các lớp Z tại 1 hàng theo dáng đã chọn. r=maxR là chân, r=minR là đỉnh.
-  const rowZs = (r: number): number[] => {
-    const { minR, maxR } = rowStats;
-    if (maxR < 0) return [0];
-    const span = Math.max(1, maxR - minR);
-    const f = (maxR - r) / span; // 0 ở chân, 1 ở đỉnh
-    return rowZLayers(thickness, profileFactor(profile, f));
-  };
+  // Các lớp Z của một hàng. Bỏ dáng gọt theo chiều cao rồi nên hàng nào cũng dày như nhau.
+  const rowZs = (): number[] => zLayers(thickness);
 
   // Dựng danh sách khối 3D theo chế độ đang chọn.
   // Bên trong hàm này ảnh vẫn được nghĩ theo hệ Y-up quen thuộc (y = chiều cao ảnh, z = bề dày);
@@ -182,9 +175,9 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
         }
       }
     } else {
-      // Chế độ độ dày + dáng khối.
+      // Chế độ độ dày phẳng: mọi hàng cùng số lớp Z.
+      const zs = rowZs();
       for (let r = 0; r < rows; r++) {
-        const zs = rowZs(r);
         for (let c = 0; c < cols; c++) {
           const col = displayColor(cells[r * cols + c]);
           if (!col) continue;
@@ -199,7 +192,7 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
   const estBlocks = useMemo(
     () => buildItems().length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rowStats, thickness, profile, layerShape, layerColor, colorMode, palette, cells, cols, rows],
+    [rowStats, thickness, layerShape, layerColor, colorMode, palette, cells, cols, rows],
   );
 
   const mirrorLeftToRight = () => {
@@ -229,8 +222,8 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
       for (let c = 0; c < cols; c++) {
         const col = displayColor(cells[r * cols + c]);
         if (col) {
-          ctx.fillStyle = col;
-          ctx.fillRect(c * px, r * px, px, px);
+          // Cùng cách vẽ với lưới "Tô tầng": ô tường ra mạch gạch, không lẫn với màu xám thường.
+          fillGridCell(ctx, c * px, r * px, px, col);
         } else {
           const dark = (r + c) % 2;
           ctx.fillStyle = lightBg
@@ -271,7 +264,7 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
     ctx.fillStyle = '#4b86c9';
     for (let r = 0; r < rows; r++) {
       if (!rowStats.rowCount[r]) continue;
-      const bw = rowZs(r).length * scale;
+      const bw = rowZs().length * scale;
       ctx.fillRect(cx - bw / 2, r * rowH, bw, Math.ceil(rowH));
     }
     // trục giữa (z=0)
@@ -282,7 +275,7 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
     ctx.lineTo(cx, h);
     ctx.stroke();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowStats, rows, thickness, profile]);
+  }, [rowStats, rows, thickness]);
 
   const readFile = async (file: File | undefined) => {
     if (!file) return;
@@ -420,6 +413,33 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
                 }}
                 onBlur={() => setDims(cols, clampDim(Number(rowsText)))}
               />
+              {/* Độ dày nằm luôn trong nhóm lưới: nó chính là chiều thứ ba của lưới, mặc định 1 =
+                  ảnh phẳng đúng một lớp. Nhãn đặt TRƯỚC ô nhập, không thì đọc thành "3 × 4 × 1 dày". */}
+              <span className="tb-glabel">dày</span>
+              <input
+                className="num"
+                type="number"
+                min={1}
+                max={64}
+                disabled={layerShape !== 'off'}
+                title={
+                  layerShape !== 'off'
+                    ? 'Đang định hình tầng — độ dày bị tắt'
+                    : 'Độ dày: số lớp theo chiều sâu'
+                }
+                value={thicknessText}
+                onChange={(e) => {
+                  const t = e.target.value;
+                  setThicknessText(t);
+                  const n = Number(t);
+                  if (t !== '' && Number.isFinite(n) && n >= 1) setThickness(Math.min(64, n));
+                }}
+                onBlur={() => {
+                  const n = clampThickness(Number(thicknessText));
+                  setThickness(n);
+                  setThicknessText(String(n));
+                }}
+              />
               <button className="link-btn" onClick={() => setDims(info.cols, info.rows)}>
                 dò {info.cols}×{info.rows}
               </button>
@@ -451,82 +471,22 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
                   🧹 Xóa
                 </button>
               </div>
-              <div className="seg">
-                <button
-                  className={colorMode === 'original' ? 'active' : ''}
-                  onClick={() => setColorMode('original')}
-                  title="Dùng màu gốc của ảnh"
-                >
-                  Màu ảnh
-                </button>
-                <button
-                  className={colorMode === 'palette' ? 'active' : ''}
-                  onClick={() => setColorMode('palette')}
-                  title="Snap về bảng màu"
-                >
-                  Bảng màu
-                </button>
-              </div>
-              <button className="create-btn" onClick={mirrorLeftToRight} title="Cân đối 2 bên">
-                ⇋
+              {/* Cặp nút "Màu ảnh / Bảng màu" tạm ẩn theo yêu cầu — luôn chạy ở chế độ bảng màu.
+                  Bật lại thì render lại khối `.seg` này và đổi `colorMode` về `useState`. */}
+              {/* Ghi hẳn chữ thay vì mỗi ký hiệu ⇋: nút này làm một việc rất cụ thể (lấy nửa trái
+                  lật sang phải), mà cái ký hiệu thì chẳng nói được điều đó. */}
+              <button
+                className="create-btn"
+                onClick={mirrorLeftToRight}
+                title="Lấy nửa TRÁI của lưới lật sang phải cho hai bên cân nhau"
+              >
+                Đối xứng trái → phải
               </button>
               {editMode === 'paint' && (
                 <div className="swatches">
-                  {palette.map((c, i) => (
-                    <button
-                      key={i}
-                      className={`swatch${c === color ? ' active' : ''}`}
-                      style={{ background: c }}
-                      title={c}
-                      onClick={() => setColor(c)}
-                    />
-                  ))}
+                  <PaletteSwatches />
                 </div>
               )}
-            </div>
-
-            {/* Dựng khối 3D: độ dày + dáng (mờ khi định hình tầng) */}
-            <div className={`tb-group${layerShape !== 'off' ? ' tb-off' : ''}`}>
-              <span className="tb-glabel">Dày</span>
-              <input
-                className="num"
-                type="number"
-                min={1}
-                max={64}
-                disabled={layerShape !== 'off'}
-                title={layerShape !== 'off' ? 'Đang định hình tầng — độ dày bị tắt' : 'Số lớp Z'}
-                value={thicknessText}
-                onChange={(e) => {
-                  const t = e.target.value;
-                  setThicknessText(t);
-                  const n = Number(t);
-                  if (t !== '' && Number.isFinite(n) && n >= 1) setThickness(Math.min(64, n));
-                }}
-                onBlur={() => {
-                  const n = clampThickness(Number(thicknessText));
-                  setThickness(n);
-                  setThicknessText(String(n));
-                }}
-              />
-              <div className="seg">
-                {PROFILES.map((p) => (
-                  <button
-                    key={p.id}
-                    className={profile === p.id ? 'active' : ''}
-                    onClick={() => setProfile(p.id)}
-                    disabled={thickness <= 1 || layerShape !== 'off'}
-                    title={
-                      layerShape !== 'off'
-                        ? 'Đang định hình tầng'
-                        : thickness <= 1
-                          ? 'Tăng độ dày > 1 để dùng dáng'
-                          : p.label
-                    }
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
             </div>
 
             {/* Định hình tầng (mặt cắt ngang) + màu tầng */}

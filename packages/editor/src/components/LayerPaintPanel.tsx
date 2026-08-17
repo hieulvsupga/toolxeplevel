@@ -3,7 +3,11 @@ import { createPortal } from 'react-dom';
 import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
+import { WALL_HEX } from '@voxel/core';
+import { brickMaps, brickShade } from '../lib/brickTexture';
+import { fillGridCell } from '../lib/wallCell';
 import { useEditor } from '../store';
+import { PaletteSwatches } from './PaletteSwatches';
 
 interface LayerPaintPanelProps {
   onClose: () => void;
@@ -30,10 +34,16 @@ interface Item {
   y: number;
   z: number;
   color: string;
+  /**
+   * Khối tường. Phải mang cờ riêng chứ không so `color === WALL_HEX` được: các tầng không phải tầng
+   * đang sửa đã bị `dimHex` làm mờ nên hex của chúng không còn là hex tường nữa.
+   */
+  wall?: boolean;
+  /** Tầng khác tầng đang sửa -> vẽ mờ. Với gạch thì làm mờ bằng độ sáng, không đổi hex. */
+  dim?: boolean;
 }
 
 function PreviewMesh({ items }: { items: Item[] }) {
-  const ref = useRef<THREE.InstancedMesh>(null);
   const fit = useMemo(() => {
     if (!items.length) return { scale: 1, cx: 0, cy: 0, cz: 0 };
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -49,6 +59,25 @@ function PreviewMesh({ items }: { items: Item[] }) {
     return { scale: 12 / Math.max(sx, sy, sz), cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, cz: (minZ + maxZ) / 2 };
   }, [items]);
 
+  // Tường phải là mesh riêng để đeo vật liệu gạch — một instancedMesh chỉ có đúng một material.
+  const [blocks, walls] = useMemo(
+    () => [items.filter((it) => !it.wall), items.filter((it) => it.wall)],
+    [items],
+  );
+
+  return (
+    <group scale={fit.scale} position={[-fit.cx * fit.scale, -fit.cy * fit.scale, -fit.cz * fit.scale]}>
+      <PreviewChunk items={blocks} />
+      <PreviewChunk items={walls} wall />
+    </group>
+  );
+}
+
+/** Một mẻ khối cùng vật liệu trong khung xem trước. */
+function PreviewChunk({ items, wall = false }: { items: Item[]; wall?: boolean }) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const brick = useMemo(() => (wall ? brickMaps() : null), [wall]);
+
   useLayoutEffect(() => {
     const mesh = ref.current;
     if (!mesh) return;
@@ -59,21 +88,36 @@ function PreviewMesh({ items }: { items: Item[] }) {
     for (let i = 0; i < items.length; i++) {
       tmpMatrix.setPosition(items[i].x, items[i].y, items[i].z);
       mesh.setMatrixAt(i, tmpMatrix);
-      tmpColor.set(items[i].color);
+      if (wall) {
+        // Màu gạch nằm trong vân, nên instanceColor chỉ chỉnh sáng/tối. Tầng khác thì hạ sáng thay
+        // vì trộn hex về màu nền như các khối màu — trộn hex sẽ làm mất sắc đỏ của gạch.
+        const [x, y, z] = [items[i].x, items[i].y, items[i].z];
+        tmpColor.setScalar(brickShade(x, y, z) * (items[i].dim ? 0.3 : 1));
+      } else {
+        tmpColor.set(items[i].color);
+      }
       mesh.setColorAt(i, tmpColor);
     }
     mesh.count = items.length;
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  }, [items]);
+  }, [items, wall]);
 
   return (
-    <group scale={fit.scale} position={[-fit.cx * fit.scale, -fit.cy * fit.scale, -fit.cz * fit.scale]}>
-      <instancedMesh ref={ref} key={items.length} args={[undefined, undefined, Math.max(1, items.length)]}>
-        <boxGeometry args={[1, 1, 1]} />
+    <instancedMesh ref={ref} key={items.length} args={[undefined, undefined, Math.max(1, items.length)]}>
+      <boxGeometry args={[1, 1, 1]} />
+      {brick ? (
+        <meshStandardMaterial
+          map={brick.map}
+          bumpMap={brick.bump}
+          bumpScale={0.4}
+          roughness={1}
+          metalness={0}
+        />
+      ) : (
         <meshStandardMaterial roughness={0.8} metalness={0.05} />
-      </instancedMesh>
-    </group>
+      )}
+    </instancedMesh>
   );
 }
 
@@ -82,7 +126,6 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
   const version = useEditor((s) => s.version);
   const color = useEditor((s) => s.color);
   const setColor = useEditor((s) => s.setColor);
-  const palette = useEditor((s) => s.palette);
   const recolorCells = useEditor((s) => s.recolorCells);
   const deleteCells = useEditor((s) => s.deleteCells);
   const stampVoxels = useEditor((s) => s.stampVoxels);
@@ -141,10 +184,7 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
         const pv = pending.get(k); // string = đặt màu, null = xóa, undefined = giữ nguyên
         const col = pv !== undefined ? pv : (grid.get(x, y, curZ)?.color ?? null);
         if (col) {
-          ctx.fillStyle = col;
-          ctx.fillRect(c * px, r * px, px, px);
-          ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-          ctx.strokeRect(c * px + 0.5, r * px + 0.5, px - 1, px - 1);
+          fillGridCell(ctx, c * px, r * px, px, col);
         } else {
           ctx.fillStyle = (r + c) % 2 ? '#20202a' : '#191921';
           ctx.fillRect(c * px, r * px, px, px);
@@ -162,15 +202,19 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
       seen.add(k);
       const pv = pending.get(k);
       if (pv === null) continue; // xem trước: đã xóa
-      let col = pv !== undefined ? pv : voxel.color;
-      if (z !== curZ) col = dimHex(col);
-      items.push({ x, y, z, color: col });
+      const raw = pv !== undefined ? pv : voxel.color;
+      // Nhận diện tường TRƯỚC khi làm mờ: sau dimHex thì hex không còn khớp hex tường nữa.
+      const wall = raw === WALL_HEX;
+      const dim = z !== curZ;
+      items.push({ x, y, z, color: dim && !wall ? dimHex(raw) : raw, wall, dim });
     }
     // Khối mới thêm (add) chưa có trong grid.
     for (const [k, val] of pending) {
       if (val === null || seen.has(k)) continue;
       const [x, y, z] = k.split(',').map(Number);
-      items.push({ x, y, z, color: z !== curZ ? dimHex(val) : val });
+      const wall = val === WALL_HEX;
+      const dim = z !== curZ;
+      items.push({ x, y, z, color: dim && !wall ? dimHex(val) : val, wall, dim });
     }
     return items;
   }, [grid, version, pending, curZ]);
@@ -358,17 +402,22 @@ export function LayerPaintPanel({ onClose }: LayerPaintPanelProps) {
             <div className="tb-group">
               <span className="tb-glabel">Màu</span>
               <div className="swatches">
-                {palette.map((c, i) => (
-                  <button
-                    key={i}
-                    className={`swatch${c === color ? ' active' : ''}`}
-                    style={{ background: c }}
-                    title={c}
-                    onClick={() => setColor(c)}
-                  />
-                ))}
+                <PaletteSwatches />
                 <input type="color" value={color} onChange={(e) => setColor(e.target.value)} title="Màu tuỳ ý" />
               </div>
+            </div>
+
+            {/* Mechanic của khối — cùng lối vào như trên toolbar chính. Ô tường vốn nằm sẵn trong
+                bảng màu bên cạnh nhưng không có nhãn, ở màn tô tầng lại càng khó đoán. */}
+            <div className="tb-group">
+              <span className="tb-glabel">Mechanic</span>
+              <button
+                className={color === WALL_HEX ? 'active' : ''}
+                onClick={() => setColor(WALL_HEX)}
+                title="Tường: khối không bao giờ bị phá, không súng nào bắn được, dùng để bịt hướng bắn — bấm rồi tô như màu thường"
+              >
+                🧱 Tường
+              </button>
             </div>
           </>
         )}

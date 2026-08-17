@@ -154,6 +154,20 @@ body,
   cursor: pointer;
 }
 
+/* Ô TƯỜNG: không phải một màu mà là một cơ chế, nên phải nhìn ra ngay giữa dãy ô màu — mang luôn
+   viên gạch 🧱 của nút trên toolbar vào đây thay vì để một ô xám trơn. */
+.swatches .swatch-wall {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  border-style: dashed;
+  border-color: #7a7a85;
+  /* Nền xám nhạt hơn để viên gạch nổi lên; màu thật của tường vẫn là hex trong bảng màu. */
+  background-image: linear-gradient(rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.35));
+}
+
 .swatches .swatch.active {
   border-color: #fff;
   box-shadow:

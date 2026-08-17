@@ -4,7 +4,7 @@ import type { ThreeEvent } from '@react-three/fiber';
 import { VoxelGrid, WALL_HEX, buildInstanceData } from '@voxel/core';
 import { useEditor } from '../store';
 import { useLayers } from '../lib/useLayers';
-import { rockMaps, rockShade } from '../lib/rockTexture';
+import { brickMaps, brickShade } from '../lib/brickTexture';
 import { beginDragFace, useDrag } from './dragStore';
 import { useHoverBlock } from './hoverStore';
 import { useInput } from './input';
@@ -104,7 +104,7 @@ function VoxelChunk({
 }) {
   const mode = useEditor((s) => s.mode);
   const meshRef = useRef<THREE.InstancedMesh>(null);
-  const rock = useMemo(() => (wall ? rockMaps() : null), [wall]);
+  const brick = useMemo(() => (wall ? brickMaps() : null), [wall]);
 
   const cellsRef = useRef(data.cells);
   cellsRef.current = data.cells;
@@ -131,11 +131,13 @@ function VoxelChunk({
       const [px, py, pz] = data.positions[i];
       tmpMatrix.setPosition(px, py, pz);
       mesh.setMatrixAt(i, tmpMatrix);
-      tmpColor.set(data.colors[i]);
-      // Tường: lệch sắc độ theo toạ độ ô cho ra "nhiều tảng đá" thay vì một mảng phẳng cùng vân.
       if (wall) {
+        // Màu gạch nằm sẵn trong vân, nên instanceColor chỉ còn việc chỉnh sáng/tối từng khối.
+        // Nhân thêm hex xám của tường vào đây là tối gấp đôi và mất luôn sắc đỏ.
         const [cx, cy, cz] = data.cells[i];
-        tmpColor.multiplyScalar(rockShade(cx, cy, cz));
+        tmpColor.setScalar(brickShade(cx, cy, cz));
+      } else {
+        tmpColor.set(data.colors[i]);
       }
       mesh.setColorAt(i, tmpColor);
     }
@@ -210,12 +212,12 @@ function VoxelChunk({
       onPointerOut={clearHover}
     >
       <boxGeometry args={[1, 1, 1]} />
-      {rock ? (
-        // Đá: nhám hết cỡ, không ánh kim, thêm bump cho mặt gồ ghề — nhìn là biết ngay không phải
-        // khối màu bắn được.
+      {brick ? (
+        // Gạch: nhám hết cỡ, không ánh kim, bump cho mạch vữa lõm xuống — nhìn là biết ngay không
+        // phải khối màu bắn được.
         <meshStandardMaterial
-          map={rock.map}
-          bumpMap={rock.bump}
+          map={brick.map}
+          bumpMap={brick.bump}
           bumpScale={0.4}
           roughness={1}
           metalness={0}

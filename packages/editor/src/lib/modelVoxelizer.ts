@@ -206,7 +206,11 @@ export interface VoxelizeOpts {
 
 /**
  * Voxel hóa. Ưu tiên màu: overrideColor > texture (sampler+UV) > màu vật liệu mặt.
- * Trả về khối canh giữa quanh gốc, đáy đặt tại y=0.
+ *
+ * Trả về khối canh giữa quanh gốc, và LỚP THẤP NHẤT CÓ KHỐI nằm đúng tại y=0 — tức khối luôn đứng
+ * chạm sàn. Mốc y=0 lấy theo hộp bao của model, mà hộp bao thì thường thấp hơn phần đặc: chóp nhọn,
+ * mặt cong, hay một mặt phẳng lạc ở dưới đều kéo hộp bao xuống mà chẳng sinh ra khối nào. Không cắt
+ * mấy lớp rỗng đó thì khối nhập vào bị kênh lên khỏi sàn một khoảng trống.
  */
 export function voxelize(tri: TriData, resolution: number, opts: VoxelizeOpts = {}): VoxelItem[] {
   const { a, b, c, color, uvA, uvB, uvC, box } = tri;
@@ -271,5 +275,21 @@ export function voxelize(tri: TriData, resolution: number, opts: VoxelizeOpts = 
     }
   }
 
+  return dropEmptyBottomLayers(items);
+}
+
+/**
+ * Hạ khối xuống cho lớp thấp nhất CÓ KHỐI về y=0.
+ *
+ * Cắt mọi lớp rỗng liên tiếp ở đáy chứ không phải chỉ một lớp: model có phần dưới thuôn nhọn có thể
+ * để trống vài lớp liền. Chỉ đụng đáy — phần trên giữ nguyên khoảng cách tương đối.
+ */
+function dropEmptyBottomLayers(items: VoxelItem[]): VoxelItem[] {
+  let minY = Infinity;
+  for (const it of items) {
+    if (it.y < minY) minY = it.y;
+  }
+  if (!Number.isFinite(minY) || minY === 0) return items;
+  for (const it of items) it.y -= minY;
   return items;
 }

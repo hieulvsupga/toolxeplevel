@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { useEditor } from '../store';
+import { PaletteSwatches } from './PaletteSwatches';
 import { yUpToEditorAll } from '../lib/axis';
 import {
   extractTriangles,
@@ -94,7 +95,6 @@ function ModelPreview({ items }: { items: VoxelItem[] }) {
 export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps) {
   const color = useEditor((s) => s.color);
   const setColor = useEditor((s) => s.setColor);
-  const palette = useEditor((s) => s.palette);
   const stampVoxels = useEditor((s) => s.stampVoxels);
 
   const [tri, setTri] = useState<TriData | null>(null);
@@ -289,15 +289,7 @@ export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps
 
               {colorMode === 'single' && (
                 <div className="swatches">
-                  {palette.map((c, i) => (
-                    <button
-                      key={i}
-                      className={`swatch${c === color ? ' active' : ''}`}
-                      style={{ background: c }}
-                      title={c}
-                      onClick={() => setColor(c)}
-                    />
-                  ))}
+                  <PaletteSwatches />
                   <input
                     type="color"
                     value={color}

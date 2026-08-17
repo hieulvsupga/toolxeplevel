@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { WALL_HEX } from '@voxel/core';
 import { useEditor } from '../store';
+import { PaletteSwatches } from './PaletteSwatches';
 import { PalettePanel } from './PalettePanel';
 import { ImportImagePanel } from './ImportImagePanel';
 import { ImportModelPanel } from './ImportModelPanel';
@@ -11,7 +12,6 @@ import { BlasterPanel } from './BlasterPanel';
 export function Toolbar() {
   const color = useEditor((s) => s.color);
   const setColor = useEditor((s) => s.setColor);
-  const palette = useEditor((s) => s.palette);
   const mode = useEditor((s) => s.mode);
   const setMode = useEditor((s) => s.setMode);
   const mirrorX = useEditor((s) => s.mirrorX);
@@ -80,15 +80,7 @@ export function Toolbar() {
       {/* Màu */}
       <div className="tb-group palette-area" ref={palAreaRef}>
         <div className="swatches">
-          {palette.map((c, i) => (
-            <button
-              key={i}
-              className={`swatch${c === color ? ' active' : ''}`}
-              style={{ background: c }}
-              title={c}
-              onClick={() => setColor(c)}
-            />
-          ))}
+          <PaletteSwatches />
         </div>
         <button
           className={`tb-icon${palOpen ? ' active' : ''}`}
@@ -173,10 +165,10 @@ export function Toolbar() {
         </button>
       </div>
 
-      {/* Cơ chế của KHỐI (không phải của súng). Tường vốn vẽ được từ trước bằng ô màu xám đầu bảng
+      {/* Mechanic của khối (không phải của súng). Tường vốn vẽ được từ trước bằng ô màu xám đầu bảng
           màu, nhưng ô đó không có nhãn nên chẳng ai đoán ra — nút này chỉ là lối vào có tên. */}
       <div className="tb-group">
-        <span className="tb-glabel">Khối</span>
+        <span className="tb-glabel">Mechanic</span>
         <button
           className={color === WALL_HEX ? 'active' : ''}
           onClick={() => setColor(WALL_HEX)}
