@@ -86,7 +86,8 @@ function toLab(hex: string): [number, number, number] {
 }
 
 const labCache = new Map<string, [number, number, number]>();
-function labOf(hex: string): [number, number, number] {
+/** Lab của một hex, có cache. Export vì phần gán màu (`paletteMap`) phải đo bằng đúng thước này. */
+export function labOf(hex: string): [number, number, number] {
   const key = hex.toUpperCase();
   let lab = labCache.get(key);
   if (!lab) {
@@ -94,6 +95,14 @@ function labOf(hex: string): [number, number, number] {
     labCache.set(key, lab);
   }
   return lab;
+}
+
+/** Bình phương khoảng cách Lab giữa 2 điểm Lab. Bình phương vì mọi phép so sánh chỉ cần thứ tự. */
+export function labDistance2(
+  a: [number, number, number],
+  b: [number, number, number],
+): number {
+  return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
 }
 
 export interface ColorMatch {

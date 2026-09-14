@@ -7,6 +7,7 @@ import { CoordHud } from './components/CoordHud';
 import { LayerListPanel } from './components/LayerListPanel';
 import { CenterPanel } from './components/CenterPanel';
 import { SelectionPanel } from './components/SelectionPanel';
+import { WrapperListPanel } from './components/WrapperListPanel';
 import { useEditor } from './store';
 
 export function App() {
@@ -41,6 +42,8 @@ export function App() {
         s.setMode('paint');
       } else if (e.key.toLowerCase() === 's') {
         s.setMode('select');
+      } else if (e.key.toLowerCase() === 'd') {
+        s.setMode('select2d');
       }
     };
     window.addEventListener('keydown', onKey);
@@ -57,13 +60,15 @@ export function App() {
       <CenterPanel />
       <DragHint />
       <SelectionPanel />
+      <WrapperListPanel />
       <div className="hint">
         <b>Chuột trái</b>: đặt/kéo khối ngang, <b>+Ctrl</b>: nâng/hạ chiều cao &nbsp;•&nbsp;
         giữ <b>X</b>: xóa, giữ <b>C</b>: hút màu &nbsp;•&nbsp;
-        <b>B / E / P / S</b>: đặt / xóa / sơn / chọn vùng &nbsp;•&nbsp;
+        <b>B / E / P / S / D</b>: đặt / xóa / sơn / chọn vùng / chọn 2D &nbsp;•&nbsp;
         <b>Space/Alt + trái</b> hoặc <b>chuột phải</b>: xoay, <b>Shift + trái</b>: pan,
         <b>lăn</b>: zoom &nbsp;•&nbsp; <b>R</b>: reset, <b>F</b>: toàn cảnh &nbsp;•&nbsp;
-        <b>Ctrl+Z / Y</b>: undo / redo &nbsp;•&nbsp; <b>Esc</b>: huỷ kéo
+        <b>Ctrl+Z / Y</b>: undo / redo &nbsp;•&nbsp; <b>Esc</b>: huỷ kéo &nbsp;•&nbsp;
+        <b>F1</b>: hướng dẫn đầy đủ
       </div>
     </>
   );

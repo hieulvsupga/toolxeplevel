@@ -3,6 +3,15 @@ import { createPortal } from 'react-dom';
 import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
+import {
+  DEFAULT_MERGE_BELOW,
+  GAME_COLORS,
+  MAX_MAPPED_COLORS,
+  WALL_COLOR_ID,
+  countColors,
+  gameColorByHex,
+  mapColorsToGamePalette,
+} from '@voxel/core';
 import { useEditor } from '../store';
 import { PaletteSwatches } from './PaletteSwatches';
 import { yUpToEditorAll } from '../lib/axis';
@@ -18,6 +27,36 @@ import {
 import { loadImageData } from '../lib/imageVoxelizer';
 
 type ModelColorMode = 'model' | 'texture' | 'single';
+
+/**
+ * Cách quy màu nguồn về bảng màu game.
+ *
+ * `distinct` là mặc định: level cuối cùng chỉ có 16 ColorType, nên màu nào cũng phải quy về đó —
+ * để nguyên màu gốc thì việc quy đổi vẫn xảy ra, chỉ là lúc XUẤT, mỗi màu tự dò màu gần nhất và
+ * hai màu khác nhau lặng lẽ nhập thành một. Quy sẵn ở đây thì thấy trước được, và tách được màu.
+ */
+type PaletteMode = 'distinct' | 'nearest' | 'raw';
+
+const PALETTE_MODES: { id: PaletteMode; label: string; hint: string }[] = [
+  {
+    id: 'distinct',
+    label: '🎯 Tách màu',
+    hint: 'Quy về bảng màu game, mỗi màu nguồn chiếm một màu game RIÊNG: hai màu cùng gần một màu game thì màu thứ hai lấy màu trống gần nó nhất, thay vì cả hai nhập thành một.',
+  },
+  {
+    id: 'nearest',
+    label: 'Gần nhất',
+    hint: 'Quy về bảng màu game theo kiểu cũ: mỗi màu nguồn lấy màu gần nhất, chấp nhận nhiều màu nguồn về cùng một màu game.',
+  },
+  {
+    id: 'raw',
+    label: 'Màu gốc',
+    hint: 'Giữ nguyên hex của model/texture. Khối vào tool đúng màu gốc, nhưng lúc xuất .asset vẫn bị dò về màu gần nhất (và có thể gộp màu).',
+  },
+];
+
+/** Các màu game gán được cho khối (bỏ ô tường — tường là cơ chế, không phải màu). */
+const TARGET_COLORS = GAME_COLORS.filter((c) => c.id !== WALL_COLOR_ID);
 
 interface ImportModelPanelProps {
   onClose: () => void;
@@ -108,7 +147,37 @@ export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps
   const [computing, setComputing] = useState(false);
   const [err, setErr] = useState('');
 
-  const [preview, setPreview] = useState<VoxelItem[]>([]);
+  /** Khối vừa voxel hoá, còn nguyên màu của model/texture. */
+  const [rawItems, setRawItems] = useState<VoxelItem[]>([]);
+  /** Tô màu theo mặt model (lấy màu theo phiếu trên cả diện tích khối) — xem `paintSurfaceColors`. */
+  const [surfaceColors, setSurfaceColors] = useState(true);
+  const [paletteMode, setPaletteMode] = useState<PaletteMode>('distinct');
+  const [maxColors, setMaxColors] = useState(MAX_MAPPED_COLORS);
+  const [mergeBelow, setMergeBelow] = useState(DEFAULT_MERGE_BELOW);
+  /** Màu ép tay: hex nguồn tiêu biểu của nhóm -> ColorType. */
+  const [overrides, setOverrides] = useState<Record<string, number>>({});
+
+  // Bảng gán màu. Tính từ SỐ VOXEL từng màu (không phải từ số pixel của texture): màu phủ nhiều
+  // khối mới là màu quyết định hình trông thế nào, còn một màu chỉ dính 2 voxel thì không đáng
+  // giành một ô trong bảng màu 16 màu.
+  const mapping = useMemo(() => {
+    if (paletteMode === 'raw' || !rawItems.length) return null;
+    return mapColorsToGamePalette(countColors(rawItems), {
+      distinct: paletteMode === 'distinct',
+      maxColors,
+      mergeBelow,
+      overrides,
+    });
+  }, [rawItems, paletteMode, maxColors, mergeBelow, overrides]);
+
+  /** Khối sẽ được tạo thật — đã quy màu. Xem trước 3D cũng dùng đúng cái này. */
+  const preview = useMemo(() => {
+    if (!mapping) return rawItems;
+    return rawItems.map((it) => ({
+      ...it,
+      color: mapping.map.get(it.color.toUpperCase()) ?? it.color,
+    }));
+  }, [rawItems, mapping]);
 
   const dims = useMemo(() => (tri ? gridDims(tri.box, resolution) : null), [tri, resolution]);
 
@@ -117,13 +186,15 @@ export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps
     setBusy(true);
     setErr('');
     setTri(null);
-    setPreview([]);
+    setRawItems([]);
     try {
       const obj = await loadModel(file);
       const td = extractTriangles(obj);
       if (!td.a.length) throw new Error('Model không có mặt (tam giác) nào');
       setTri(td);
       setFileName(file.name);
+      // Model khác thì bảng gán màu cũ chẳng còn nhóm nào để ép.
+      setOverrides({});
       if (!td.hasUV && colorMode === 'texture') setColorMode('model');
     } catch (e) {
       setErr((e as Error).message);
@@ -131,6 +202,12 @@ export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps
       setBusy(false);
     }
   };
+
+  // Đổi nguồn màu (chế độ màu, hay texture khác) là bảng nhóm khác hẳn -> bỏ hết màu ép tay, không
+  // thì mấy hex ép cũ nằm lại và lặng lẽ áp cho nhóm trùng hex ở bảng mới.
+  useEffect(() => {
+    setOverrides({});
+  }, [colorMode, texData]);
 
   useEffect(() => {
     if (initialFile) readFile(initialFile);
@@ -140,7 +217,7 @@ export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps
   // Voxel hóa LẠI (debounce) khi đổi độ phân giải / màu / texture -> xem trước 3D.
   useEffect(() => {
     if (!tri) {
-      setPreview([]);
+      setRawItems([]);
       return;
     }
     setComputing(true);
@@ -148,12 +225,16 @@ export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps
       colorMode === 'single'
         ? { overrideColor: color }
         : colorMode === 'texture' && texData
-          ? { sampler: makeTextureSampler(texData) }
-          : {};
+          ? {
+              sampler: makeTextureSampler(texData),
+              surfaceColors,
+              textureSize: { width: texData.width, height: texData.height },
+            }
+          : { surfaceColors };
     const timer = setTimeout(() => {
       try {
         // Quy về hệ trục editor ngay tại đây, để phần xem trước hiện đúng thứ sẽ được tạo ra.
-        setPreview(yUpToEditorAll(voxelize(tri, resolution, opts)));
+        setRawItems(yUpToEditorAll(voxelize(tri, resolution, opts)));
         setErr('');
       } catch (e) {
         setErr((e as Error).message);
@@ -163,7 +244,7 @@ export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps
     }, 250);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tri, resolution, colorMode, texData, color]);
+  }, [tri, resolution, colorMode, texData, color, surfaceColors]);
 
   const clampRes = (v: number) => Math.max(4, Math.min(96, Math.round(v) || 4));
 
@@ -287,6 +368,20 @@ export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps
                 </span>
               )}
 
+              {colorMode !== 'single' && (
+                <button
+                  className={surfaceColors ? 'active' : ''}
+                  onClick={() => setSurfaceColors((v) => !v)}
+                  title={
+                    'Lấy màu theo MẶT model: rải mẫu khắp bề mặt, mỗi khối lấy màu chiếm phần lớn diện tích của nó. ' +
+                    'Tắt là về cách cũ — mỗi khối lấy đúng 1 pixel texture tại chỗ tia cắt mặt, nên độ phân giải thấp ' +
+                    'hay ra màu của một pixel lẻ, và sườn khối (mặt đứng) thường sai màu.'
+                  }
+                >
+                  🎯 Màu theo mặt
+                </button>
+              )}
+
               {colorMode === 'single' && (
                 <div className="swatches">
                   <PaletteSwatches />
@@ -300,8 +395,59 @@ export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps
               )}
             </div>
 
+            {/* Quy màu về bảng màu game. Đặt riêng một nhóm vì nó là bước sau của "Màu": lấy màu ở
+                đâu là một chuyện, quy nó về 16 ColorType của game là chuyện khác. */}
+            <div className="tb-group">
+              <span className="tb-glabel">Bảng màu game</span>
+              <div className="seg">
+                {PALETTE_MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    className={paletteMode === m.id ? 'active' : ''}
+                    onClick={() => setPaletteMode(m.id)}
+                    title={m.hint}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              {paletteMode === 'distinct' && (
+                <>
+                  <span className="tb-glabel">tối đa</span>
+                  <input
+                    className="num"
+                    type="number"
+                    min={1}
+                    max={MAX_MAPPED_COLORS}
+                    title={`Số màu game tối đa được dùng (1–${MAX_MAPPED_COLORS}). Nhiều màu nguồn hơn thế thì gom cụm lại, không cắt bớt.`}
+                    value={maxColors}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n) && n >= 1) {
+                        setMaxColors(Math.min(MAX_MAPPED_COLORS, Math.floor(n)));
+                      }
+                    }}
+                  />
+                  <span className="tb-glabel">gộp dưới ΔE</span>
+                  <input
+                    className="num"
+                    type="number"
+                    min={0}
+                    max={40}
+                    title="Hai màu nguồn cách nhau dưới mức này thì coi là một màu và gộp lại. Để 0 là tách hết — texture nén có mấy hex lệch 1–2 độ, tách ra là hình rằn ri."
+                    value={mergeBelow}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n) && n >= 0) setMergeBelow(Math.min(40, Math.floor(n)));
+                    }}
+                  />
+                </>
+              )}
+            </div>
+
             <span className="modal-dim">
               {computing ? 'đang tính…' : `≈ ${preview.length} khối`}
+              {mapping ? ` · ${mapping.groups.length} màu` : ''}
             </span>
           </>
         )}
@@ -326,13 +472,78 @@ export function ImportModelPanel({ onClose, initialFile }: ImportModelPanelProps
 
       <div className="import-stage">
         {tri ? (
-          <div className="model-preview">
-            <ModelPreview items={preview} />
-            <div className="model-preview-hint">
-              {fileName} · {size!.x.toFixed(1)}×{size!.y.toFixed(1)}×{size!.z.toFixed(1)} · kéo
-              chuột để xoay
+          <>
+            <div className="model-preview">
+              <ModelPreview items={preview} />
+              <div className="model-preview-hint">
+                {fileName} · {size!.x.toFixed(1)}×{size!.y.toFixed(1)}×{size!.z.toFixed(1)} · kéo
+                chuột để xoay
+              </div>
             </div>
-          </div>
+            {mapping && mapping.groups.length > 0 && (
+              // Bảng gán màu: thấy được màu nguồn nào thành màu game nào, và ép lại được. Không có
+              // bảng này thì "màu nhìn không giống" chỉ còn cách đoán, vì phép quy đổi nằm hết
+              // trong lúc xuất file.
+              <div className="model-colors">
+                <div className="model-colors-head">
+                  <b>Gán màu</b>
+                  <span className="modal-dim">
+                    {mapping.groups.length} màu · trống {mapping.free.length}
+                  </span>
+                </div>
+                <div className="model-colors-list">
+                  {mapping.groups.map((g) => {
+                    const src = gameColorByHex(g.source);
+                    return (
+                      <div className="model-color-row" key={g.source}>
+                        <span
+                          className="pal-swatch"
+                          style={{ background: g.source }}
+                          title={`Màu nguồn ${g.source}${
+                            src ? ` (trùng khít ${src.name})` : ''
+                          }${g.sources.length > 1 ? ` · gộp ${g.sources.length} màu nguồn` : ''}`}
+                        />
+                        <span className="model-color-arrow">→</span>
+                        <span className="pal-swatch" style={{ background: g.target.hex }} />
+                        <select
+                          value={g.target.id}
+                          title="Ép nhóm này về một màu game khác — màu đang bị nhóm khác giữ thì hai nhóm đổi chỗ cho nhau"
+                          onChange={(e) =>
+                            setOverrides((o) => ({ ...o, [g.source]: Number(e.target.value) }))
+                          }
+                        >
+                          {TARGET_COLORS.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                              {mapping.groups.some(
+                                (other) => other.target.id === t.id && other.source !== g.source,
+                              )
+                                ? ' (đang dùng)'
+                                : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="model-color-count">{g.count}</span>
+                        {g.moved && (
+                          <span
+                            className="model-color-moved"
+                            title="Màu game gần nhóm này nhất đã có nhóm khác giữ, nên nhóm này lấy màu trống gần nó nhất — đây chính là chỗ giữ cho hai màu không nhập thành một."
+                          >
+                            ⇄
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {Object.keys(overrides).length > 0 && (
+                  <button className="link-btn" onClick={() => setOverrides({})}>
+                    bỏ {Object.keys(overrides).length} màu ép tay
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         ) : (
           <label className="dropzone">
             <div className="dropzone-big">{busy ? 'Đang nạp model…' : '＋ Bấm để chọn model 3D'}</div>

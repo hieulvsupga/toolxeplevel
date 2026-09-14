@@ -39,6 +39,18 @@ và double-click file `.exe`, không cần cài Node hay gì cả.
 Chạy thử bản desktop tại máy dev (không đóng gói): `npm run app -w @voxel/editor`.
 Việc này KHÔNG ảnh hưởng `npm run dev` — vẫn test qua localhost như thường.
 
+## Hướng dẫn sử dụng
+
+Trong tool: nút **❔ Hướng dẫn** trên toolbar, hoặc phím **F1** (`?` cũng được). Bảng đó có mục lục
+bên trái, nội dung bên phải và ô lọc theo từ khoá — gồm 14 mục: từ dựng khối, chọn vùng, camera, bảng
+màu/tường, tô tầng, nhập ảnh-model, xếp súng, **luật khoang chờ**, tạo súng tự động, xuất/nhập
+`.asset`, xử lý sự cố, tới bảng tổng hợp phím tắt.
+
+Nội dung nằm ở [guideContent.ts](packages/editor/src/components/guideContent.ts) dưới dạng **dữ liệu**
+(`GuideSection[]` với các block `p` / `ul` / `steps` / `keys` / `note`), còn
+[GuidePanel.tsx](packages/editor/src/components/GuidePanel.tsx) chỉ lo dựng hình — thêm mục thì sửa
+đúng một file, mục lục và phần lọc tự có theo. Sửa tính năng thì nhớ sửa mục tương ứng ở đó.
+
 ## MVP hiện có (xếp tay + snapping)
 
 - Đặt/xóa khối bằng chuột, snap vào lưới, đặt áp mặt (kiểu Minecraft)
@@ -83,6 +95,72 @@ hướng, nên phải thấy trọn khối và thấy đúng hình dáng (fov r�
 Khoảng cách tính từ bán kính khối quanh gốc quay nên **cỡ hình không đổi khi xoay** — có vậy mới so
 được góc nào đẹp hơn. `rootPosition` và `objectScale` cố tình không áp vào: chúng chỉ dịch/phóng khối
 trong scene game chứ không đổi hướng, áp vào là khối lệch khỏi khung.
+
+## Dịch level của tapaway sang LevelData
+
+```bash
+npm run convert:tapaway          # ca 1745 file
+npm run convert:tapaway -- 20    # chi 20 file dau, de thu
+```
+
+Vào `levelgametapaway/levelbase/level_*.txt` → ra `voxellevel/level_*.asset`. Logic ở
+[scripts/convert-tapaway.ts](scripts/convert-tapaway.ts), format đọc ra từ `LevelManager.cs` của tapaway:
+
+- **dòng 0** `sz|sx|sy|<ô>|<ô>|…` — số ĐẦU là kích thước trục Z, rồi X, rồi Y (chính `Edittext()` bên
+  họ cũng đảo lại). Thứ tự ô là y-major → x → z (z trong cùng), theo ba vòng lặp của `CreateMap()`
+- **dòng 1** `rotX|rotY|rotZ|cameraDistance[|limitMove]` — cách tapaway trình bày khối, không mang sang
+- **dòng 2** `style|style|…` song song 1:1 với danh sách ô (đã kiểm: khớp ở cả 1745 file)
+- **dòng 3** khối ghép x2/x3 — chỉ 13/1745 file có, và nó chỉ GỘP khối đã có ở dòng 0 thành khối dài
+  chứ không thêm ô mới, nên bỏ qua được mà hình khối vẫn đủ
+
+Quy đổi:
+
+| tapaway | tool này |
+|---|---|
+| ô `> 0` (số = hướng trượt 1..6) | một khối; hướng bỏ đi vì game mình không có cơ chế đó |
+| ô `-2` tường | ô tường (`ColorType 0`) — trùng nghĩa hoàn toàn |
+| ô `-3` grinder | cũng thành tường (nó cũng là vật cản), script đếm riêng và báo |
+| `styleColor` 1..15 | `ColorType` 1..15 — cả hai đều là "số nhóm", map thẳng số sang số |
+| trục Y lên (Unity) | trục Z lên |
+
+Trục phải **đảo chiều sâu** (`our.y = sz - 1 - g`): phép đổi cơ sở `(X,Y,Z) → (X,Z,Y)` làm lật
+chirality, không đảo thì khối ra ảnh gương. Đảo chiều sâu chứ không đảo trái–phải, để nhìn từ mặt trước
+(hướng camera mặc định của tool) là thấy đúng hình gốc.
+
+Mỗi file ra kèm **bộ súng cơ bản** (`autoShooters`, 5 hàng, ~40 đạn/khẩu) nên tổng đạn khớp đúng số khối
+từng màu — file là data hợp lệ ngay. Muốn có cơ chế và mức khó thì mở tool bấm **⚡ Tạo theo màu khối…**.
+
+Đã kiểm: đọc lại cả 1745 file `.asset` bằng đúng đường mà tool nhập file (`parseUnityAsset` →
+`gridFromLayers`) rồi so với data gốc — **1745/1745 khớp** cả hình dạng, số khối và số ô tường.
+
+## Bảng liệt kê level (.xlsx) cho người dựng map
+
+```bash
+npm run report:levels
+```
+
+Ra `voxellevel/danh-sach-level.xlsx` — 1745 dòng, 13 cột, hàng tiêu đề **khoá sẵn** và **bật lọc/sắp
+xếp**, số ghi dạng số thật nên lọc theo khoảng (ví dụ "số khối từ 200 đến 350") chạy đúng.
+
+| cột | nghĩa |
+|---|---|
+| STT, Level | số thứ tự và tên file `.asset` |
+| Số khối / Số tường / Số màu | khối bắn được, ô tường, số `ColorType` đang dùng |
+| Rộng (X) / Sâu (Y) / Cao (Z) | hộp bao **thật** của khối, không phải cỡ lưới trong file gốc |
+| Số layer | số layer trong `LevelData` (mỗi layer = một cặp depth + màu) |
+| Số lớp depth | số lớp phải bóc từ vỏ vào lõi |
+| Khối hở sẵn / Khối bị chôn / % bị chôn | depth 0 là bắn được ngay; phần còn lại phải đào mới tới |
+
+Hai cột cuối là thứ đáng nhìn khi chọn hình khối: **% bị chôn càng cao thì màn càng khó**, vì khoang
+chờ chỉ có 5 ô nên súng của màu đang bị chôn lên khoang sớm là ngồi chiếm chỗ.
+
+Số liệu đọc từ chính file `.asset` (qua `parseUnityAsset`, đúng đường mà tool nhập file) nên bảng mô tả
+đúng thứ người dựng sẽ mở ra. Đối chiếu chéo với data gốc của tapaway: `level_100` 173 khối/5 màu,
+`level_315` 443 khối/86 tường, `level_321` 27 tường + 24 grinder = 51 — khớp.
+
+Bộ ghi `.xlsx` viết tay trong [scripts/miniXlsx.ts](scripts/miniXlsx.ts) (ZIP + vài file XML, ~200 dòng)
+thay vì thêm dependency. Không chọn CSV vì Excel trên máy Việt Nam lấy `;` làm dấu phân cách — file CSV
+dấu phẩy mở ra là dồn hết vào một cột và số bị đọc thành chữ.
 
 ## Luật khoang chờ (thứ mọi phép kiểm dựa vào)
 

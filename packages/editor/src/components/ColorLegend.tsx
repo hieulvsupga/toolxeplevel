@@ -1,8 +1,16 @@
 import { useMemo, useState } from 'react';
 import { useEditor } from '../store';
 
+interface ColorLegendProps {
+  /**
+   * Nhúng vào bảng khác (bảng 🎨 Tô lớp) thay vì nổi trên scene: bỏ định vị fixed, bỏ nút thu gọn —
+   * chip thu gọn vốn là fixed nên bấm vào trong bảng là nó nhảy ra giữa màn hình.
+   */
+  embedded?: boolean;
+}
+
 /** Bảng bên phải: liệt kê các màu đang dùng trong scene + số block, và lọc hiển thị. */
-export function ColorLegend() {
+export function ColorLegend({ embedded = false }: ColorLegendProps) {
   const grid = useEditor((s) => s.grid);
   const version = useEditor((s) => s.version);
   const colorFilter = useEditor((s) => s.colorFilter);
@@ -24,7 +32,7 @@ export function ColorLegend() {
   const total = rows.reduce((s, [, n]) => s + n, 0);
   const filtering = colorFilter.length > 0;
 
-  if (!open) {
+  if (!open && !embedded) {
     return (
       <button
         className={`color-legend legend-chip${filtering ? ' filtering' : ''}`}
@@ -37,7 +45,7 @@ export function ColorLegend() {
   }
 
   return (
-    <div className="color-legend">
+    <div className={`color-legend${embedded ? ' embedded' : ''}`}>
       <div className="legend-head">
         <span title={`${total} khối`}>{rows.length} màu</span>
         <span className="legend-head-actions">
@@ -46,13 +54,15 @@ export function ColorLegend() {
               tất cả
             </button>
           )}
-          <button
-            className="link-btn legend-collapse"
-            onClick={() => setOpen(false)}
-            title="Thu gọn bảng màu"
-          >
-            ›
-          </button>
+          {!embedded && (
+            <button
+              className="link-btn legend-collapse"
+              onClick={() => setOpen(false)}
+              title="Thu gọn bảng màu"
+            >
+              ›
+            </button>
+          )}
         </span>
       </div>
       <div className="legend-list">

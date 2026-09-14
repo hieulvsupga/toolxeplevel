@@ -97,8 +97,10 @@ export function computeDepths(grid: VoxelGrid): Map<string, number> {
 /**
  * Hộp bao của toàn bộ grid, TRƯỚC khi dời tâm.
  *
- * Editor và data dùng chung một hệ trục (z là trục đứng), nên ở đây không có phép đổi trục nào —
- * toạ độ một khối trong editor chính là toạ độ của nó trong file .asset, chỉ trừ phép dời tâm.
+ * Editor và data dùng chung một hệ trục (z là trục đứng), nên ở đây không có phép đổi trục nào.
+ * Toạ độ một khối trong editor bằng toạ độ trong file, trừ hai việc: phép dời tâm (ở dưới), và
+ * phép LẬT CHIỀU SÂU (y -> -y) — cái đó nằm gọn trong `toUnityAsset`/`parseUnityAsset`, xem
+ * `flipDepthVec`. Mọi thứ trong file này làm việc trên toạ độ editor.
  */
 export function gridBounds(grid: VoxelGrid): { min: Vec3; max: Vec3 } | null {
   let min: Vec3 | null = null;

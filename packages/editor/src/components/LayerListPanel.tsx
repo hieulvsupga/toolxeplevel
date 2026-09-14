@@ -8,6 +8,14 @@ type Cell = [number, number, number];
 const cellsOf = (rows: LayerRow[]): Cell[] =>
   rows.flatMap((row) => row.positions.map((p) => [p.x, p.y, p.z] as Cell));
 
+interface LayerListPanelProps {
+  /**
+   * Nhúng vào một bảng khác (bảng 🎨 Tô lớp) thay vì nổi trên scene: bỏ định vị fixed và bỏ luôn
+   * nút thu gọn — thu gọn trong đó thì cái chip sẽ nhảy ra giữa màn hình vì nó vốn là fixed.
+   */
+  embedded?: boolean;
+}
+
 /**
  * Bên trái: danh sách layer đúng như sẽ ghi vào `LevelData.layers` — bật/tắt hiển thị, và sơn cả
  * layer hoặc cả depth bằng màu đang chọn trên toolbar.
@@ -15,7 +23,7 @@ const cellsOf = (rows: LayerRow[]): Cell[] =>
  * Tắt một layer chỉ ẩn nó khỏi màn hình — file .asset xuất ra vẫn có đủ. Nhưng khối bị ẩn thì
  * cũng không raycast được, nên không lỡ tay đặt/xóa nhầm vào lớp đang không nhìn thấy.
  */
-export function LayerListPanel() {
+export function LayerListPanel({ embedded = false }: LayerListPanelProps) {
   const { rows } = useLayers();
   const color = useEditor((s) => s.color);
   const hiddenLayers = useEditor((s) => s.hiddenLayers);
@@ -23,8 +31,29 @@ export function LayerListPanel() {
   const soloLayer = useEditor((s) => s.soloLayer);
   const showAllLayers = useEditor((s) => s.showAllLayers);
   const recolorCells = useEditor((s) => s.recolorCells);
+  const deleteCells = useEditor((s) => s.deleteCells);
 
   const [open, setOpen] = useState(true);
+
+  /**
+   * Xoá sạch một depth.
+   *
+   * Hỏi lại trước khi xoá dù có Ctrl+Z: nút này nằm sát ô bật/tắt hiển thị — thứ người dựng bấm
+   * liên tục — mà xoá một depth thì depth của mọi lớp còn lại được tính lại, cả danh sách nhảy số
+   * hết. Bấm nhầm mà không hỏi thì rất khó nhận ra vừa mất cái gì.
+   */
+  const deleteDepth = (depth: number, rowsOfDepth: LayerRow[]) => {
+    const cells = cellsOf(rowsOfDepth);
+    if (!cells.length) return;
+    const hiddenNote = rowsOfDepth.some((r) => hiddenLayers.includes(r.key))
+      ? ' (trong đó có lớp đang bị ẩn)'
+      : '';
+    const ok = confirm(
+      `Xoá toàn bộ ${cells.length} khối ở depth ${depth}?${hiddenNote}\n\nCtrl+Z hoàn tác được.`,
+    );
+    if (!ok) return;
+    deleteCells(cells);
+  };
 
   if (!rows.length) return null;
 
@@ -32,7 +61,7 @@ export function LayerListPanel() {
   const hiddenCount = hiddenLayers.length;
   const currentName = gameColorByHex(color)?.name ?? color;
 
-  if (!open) {
+  if (!open && !embedded) {
     return (
       <button
         className={`layer-list layer-chip${hiddenCount ? ' filtering' : ''}`}
@@ -53,7 +82,7 @@ export function LayerListPanel() {
   }
 
   return (
-    <div className="layer-list">
+    <div className={`layer-list${embedded ? ' embedded' : ''}`}>
       <div className="layer-head">
         <span title={`${rows.length} layer sẽ được ghi vào LevelData.layers`}>
           {rows.length} layer
@@ -64,9 +93,15 @@ export function LayerListPanel() {
               tất cả
             </button>
           )}
-          <button className="link-btn legend-collapse" onClick={() => setOpen(false)} title="Thu gọn">
-            ‹
-          </button>
+          {!embedded && (
+            <button
+              className="link-btn legend-collapse"
+              onClick={() => setOpen(false)}
+              title="Thu gọn"
+            >
+              ‹
+            </button>
+          )}
         </span>
       </div>
 
@@ -105,6 +140,13 @@ export function LayerListPanel() {
                 >
                   <span className="layer-depth-label">depth {group.depth}</span>
                   <span className="layer-count">{groupCount}</span>
+                </button>
+                <button
+                  className="link-btn layer-del"
+                  onClick={() => deleteDepth(group.depth, group.rows)}
+                  title={`Xoá toàn bộ ${groupCount} khối ở depth ${group.depth}`}
+                >
+                  🗑
                 </button>
               </div>
 

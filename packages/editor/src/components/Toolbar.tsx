@@ -6,8 +6,10 @@ import { PalettePanel } from './PalettePanel';
 import { ImportImagePanel } from './ImportImagePanel';
 import { ImportModelPanel } from './ImportModelPanel';
 import { LayerPaintPanel } from './LayerPaintPanel';
+import { SubdividePanel } from './SubdividePanel';
 import { ExportUnityPanel } from './ExportUnityPanel';
 import { BlasterPanel } from './BlasterPanel';
+import { GuidePanel } from './GuidePanel';
 
 export function Toolbar() {
   const color = useEditor((s) => s.color);
@@ -26,6 +28,12 @@ export function Toolbar() {
   const version = useEditor((s) => s.version);
   const grid = useEditor((s) => s.grid);
   const blasterCount = useEditor((s) => s.blasters.length);
+  const wrappers = useEditor((s) => s.wrappers);
+  const wrapperCount = wrappers.length;
+  const iceCount = wrappers.filter((w) => w.kind === 'ice').length;
+  const shieldCount = wrapperCount - iceCount;
+  const showWrappers = useEditor((s) => s.showWrappers);
+  const toggleShowWrappers = useEditor((s) => s.toggleShowWrappers);
 
   const wallCount = useMemo(() => {
     let n = 0;
@@ -43,8 +51,10 @@ export function Toolbar() {
   const [imgFile, setImgFile] = useState<File | null>(null);
   const [modelFile, setModelFile] = useState<File | null>(null);
   const [layerOpen, setLayerOpen] = useState(false);
+  const [subdivideOpen, setSubdivideOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [blasterOpen, setBlasterOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   // Click ra ngoài vùng bảng màu -> đóng popup.
   useEffect(() => {
@@ -57,6 +67,28 @@ export function Toolbar() {
     window.addEventListener('pointerdown', onDown);
     return () => window.removeEventListener('pointerdown', onDown);
   }, [palOpen]);
+
+  // F1 (hoặc ?) mở/đóng hướng dẫn, Esc đóng. Đặt ở đây vì trạng thái mở nằm ở đây; các phím tắt
+  // dựng khối thì nằm trong App/CameraRig.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing =
+        t &&
+        (t.tagName === 'INPUT' ||
+          t.tagName === 'TEXTAREA' ||
+          t.tagName === 'SELECT' ||
+          t.isContentEditable);
+      if (e.key === 'F1' || (!typing && e.key === '?')) {
+        e.preventDefault();
+        setGuideOpen((o) => !o);
+      } else if (e.key === 'Escape') {
+        setGuideOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -122,6 +154,13 @@ export function Toolbar() {
         >
           ⬚ Chọn
         </button>
+        <button
+          className={mode === 'select2d' ? 'active' : ''}
+          onClick={() => setMode('select2d')}
+          title="Chọn 2D (D): kéo một khung trên màn hình, mọi khối nằm trong khung được chọn — khoanh theo đúng hình đang thấy, xuyên hết chiều sâu. Giữ Ctrl để chọn thêm."
+        >
+          ▭ Chọn 2D
+        </button>
       </div>
 
       {/* Đối xứng */}
@@ -170,6 +209,13 @@ export function Toolbar() {
         <button onClick={() => count && setLayerOpen(true)} disabled={!count} title="Tô màu theo từng tầng (lưới 2D + xem 3D)">
           🎨 Tô tầng
         </button>
+        <button
+          onClick={() => count && setSubdivideOpen(true)}
+          disabled={!count}
+          title="Chia mỗi khối thành n×n×n khối con — giữ nguyên hình, số khối ×n³"
+        >
+          ⧉ Chia nhỏ
+        </button>
       </div>
 
       {/* Mechanic của khối (không phải của súng). Tường vốn vẽ được từ trước bằng ô màu xám đầu bảng
@@ -177,22 +223,43 @@ export function Toolbar() {
       <div className="tb-group">
         <span className="tb-glabel">Mechanic</span>
         <button
-          className={color === WALL_HEX ? 'active' : ''}
+          className={`tb-icon${color === WALL_HEX ? ' active' : ''}`}
           onClick={() => setColor(WALL_HEX)}
           title="Tường: khối không bao giờ bị phá, không súng nào bắn được, dùng để bịt hướng bắn — bấm rồi vẽ như màu thường"
         >
-          🧱 Tường{wallCount ? ` (${wallCount})` : ''}
+          🧱{wallCount ? ` ${wallCount}` : ''}
+        </button>
+        {/* Bật/ẩn bảng lớp bọc ở góc dưới-trái.
+
+            Icon theo LOẠI đang có trong level (băng / shield / cả hai): một icon 🧊 cứng thì sai
+            khi level toàn shield. Số lượng để trong tooltip — nhìn bảng lớp bọc là thấy đủ. Xám
+            khi chưa có lớp nào, lúc đó tooltip nói luôn cách tạo. */}
+        <button
+          className={`tb-icon${showWrappers && wrapperCount ? ' active' : ''}`}
+          onClick={toggleShowWrappers}
+          disabled={!wrapperCount}
+          title={
+            wrapperCount
+              ? `Lớp bọc: ${iceCount} băng, ${shieldCount} shield — bấm để ẩn/hiện bảng ở góc dưới-trái`
+              : 'Lớp bọc: chọn một hộp bằng ⬚ Chọn rồi bấm “🧊 Băng” hoặc “🛡 Shield” trong bảng vùng chọn'
+          }
+        >
+          {!wrapperCount || (iceCount > 0 && shieldCount > 0)
+            ? '🧊🛡'
+            : iceCount > 0
+              ? '🧊'
+              : '🛡'}
         </button>
       </div>
 
       {/* Súng bắn + hàng chờ */}
       <div className="tb-group">
         <button
-          className={blasterOpen ? 'active' : ''}
+          className={`tb-icon${blasterOpen ? ' active' : ''}`}
           onClick={() => setBlasterOpen((o) => !o)}
-          title="Xếp súng bắn theo hàng, khớp số đạn với số khối từng màu"
+          title="Blaster: xếp súng bắn theo hàng, khớp số đạn với số khối từng màu"
         >
-          🔫 Blaster{blasterCount ? ` (${blasterCount})` : ''}
+          🔫{blasterCount ? ` ${blasterCount}` : ''}
         </button>
       </div>
 
@@ -217,6 +284,16 @@ export function Toolbar() {
           title="Xóa toàn bộ level"
         >
           🗑
+        </button>
+      </div>
+
+      <div className="tb-group">
+        <button
+          className={`tb-icon${guideOpen ? ' active' : ''}`}
+          onClick={() => setGuideOpen(true)}
+          title="Hướng dẫn sử dụng toàn bộ tool (F1)"
+        >
+          ❔
         </button>
       </div>
 
@@ -250,8 +327,10 @@ export function Toolbar() {
         <ImportModelPanel initialFile={modelFile} onClose={() => setModelFile(null)} />
       )}
       {layerOpen && <LayerPaintPanel onClose={() => setLayerOpen(false)} />}
+      {subdivideOpen && <SubdividePanel onClose={() => setSubdivideOpen(false)} />}
       {blasterOpen && <BlasterPanel onClose={() => setBlasterOpen(false)} />}
       {exportOpen && <ExportUnityPanel onClose={() => setExportOpen(false)} />}
+      {guideOpen && <GuidePanel onClose={() => setGuideOpen(false)} />}
       <input
         ref={fileRef}
         type="file"

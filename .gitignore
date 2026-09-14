@@ -4,3 +4,7 @@ release/
 *.log
 .DS_Store
 .vite/
+
+# Bundle tam cua script chuyen level (esbuild sinh ra moi lan chay)
+scripts/.convert-tapaway.cjs
+scripts/.level-report.cjs

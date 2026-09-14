@@ -46,7 +46,11 @@ function boxEdges(r: Region): [number, number, number][] {
  * khi vùng chọn bọc quanh khối — khung bị khối che thì không biết mình đang chọn đâu.
  */
 export function SelectionBox() {
-  const region = useSelection((s) => s.region);
+  const boxRegion = useSelection((s) => s.region);
+  const pick = useSelection((s) => s.pick);
+  // Chọn 2D cũng vẽ khung, nhưng là khung HỘP BAO của các khối đã chọn — để biết cụm đang chọn nằm
+  // đâu trong scene. Phần khối nào được chọn thì `PickHighlight` lo.
+  const region = pick ? pick.region : boxRegion;
   const points = useMemo(() => (region ? boxEdges(region) : []), [region]);
 
   if (!region) return null;
@@ -54,13 +58,17 @@ export function SelectionBox() {
 
   return (
     <group>
-      <mesh
-        position={[region.min[0] + sx / 2, region.min[1] + sy / 2, region.min[2] + sz / 2]}
-        scale={[sx, sy, sz]}
-      >
-        <boxGeometry args={[1, 1, 1]} />
-        <meshBasicMaterial color={SELECT_COLOR} transparent opacity={0.12} depthWrite={false} />
-      </mesh>
+      {/* Không tô khối mờ cho chọn 2D: tập ô rời rạc thì hộp bao có thể trùm lên cả những khối
+          không được chọn, tô vào là nói sai. */}
+      {!pick && (
+        <mesh
+          position={[region.min[0] + sx / 2, region.min[1] + sy / 2, region.min[2] + sz / 2]}
+          scale={[sx, sy, sz]}
+        >
+          <boxGeometry args={[1, 1, 1]} />
+          <meshBasicMaterial color={SELECT_COLOR} transparent opacity={0.12} depthWrite={false} />
+        </mesh>
+      )}
       <Line
         points={points}
         segments

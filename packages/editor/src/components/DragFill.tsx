@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { useEditor } from '../store';
 import { MAX_SIDE, clampSpan, dragBounds, regionCells, useDrag } from './dragStore';
+import { visibleCellFilter } from '../lib/useLayers';
 import { useSelection } from './selectionStore';
 
 const UP = new THREE.Vector3(0, 0, 1);
@@ -81,8 +82,11 @@ export function DragFill() {
       }
       const { fill, paint, color } = useEditor.getState();
       const cells = regionCells(d);
-      if (d.mode === 'remove') fill(cells, null);
-      else if (d.mode === 'paint') paint(cells, color);
+      // Sơn / xoá chỉ chạm khối ĐANG THẤY: khối bị tắt layer hay bị bộ lọc màu ẩn đi thì một cú kéo
+      // không được phép sửa nó. Đặt khối thì không lọc — ô trống chẳng có gì để ẩn.
+      const visible = visibleCellFilter();
+      if (d.mode === 'remove') fill(cells, null, visible);
+      else if (d.mode === 'paint') paint(cells, color, visible);
       else fill(cells, { color });
       useDrag.getState().clear();
     };

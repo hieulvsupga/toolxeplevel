@@ -174,6 +174,9 @@ function VoxelChunk({
       if (v) useEditor.getState().setColor(v.color);
       return;
     }
+    // Chọn 2D không kéo theo mặt khối: khung của nó do `Marquee2D` bắt ngay trên canvas, còn bắt
+    // đầu một cú kéo ở đây thì lúc thả `DragFill` không hiểu chế độ này và rơi vào nhánh ĐẶT khối.
+    if (mode === 'select2d') return;
     // Bắt đầu kéo từ mặt khối; thả chuột (DragFill) mới fill cả vùng.
     beginDragFace(cell, e.face.normal, erase ? 'remove' : mode);
   };

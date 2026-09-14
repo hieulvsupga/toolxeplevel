@@ -1,0 +1,568 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bfb17734dfa3b1141aae8e00b43e6d11, type: 3}
+  m_Name: level_1037
+  m_EditorClassIdentifier: Assembly-CSharp::Game.Data.LevelData
+  levelVersion: 1
+  dockCount: 5
+  difficulty: 0
+  shouldLoop: 0
+  shouldOfferMeteorShower: 1
+  rootPosition: {x: 0, y: -5, z: 2.5}
+  rootLocalEulerAngles: {x: 90, y: 0, z: 0}
+  voxelizedObjectCenterPosition: {x: 0, y: 0, z: 0}
+  voxelizedObjectShadowPosition: {x: -0.02, y: -12.5, z: 4}
+  voxelizedObjectScale: 1
+  layers:
+  - depth: 0
+    colorType: 8
+    voxelPositions:
+    - {x: -6, y: -2, z: -2}
+    - {x: -6, y: -2, z: -1}
+    - {x: -6, y: -2, z: 0}
+    - {x: -6, y: -2, z: 1}
+    - {x: -6, y: -1, z: -2}
+    - {x: -6, y: -1, z: -1}
+    - {x: -6, y: -1, z: 0}
+    - {x: -6, y: -1, z: 1}
+    - {x: -6, y: 0, z: -2}
+    - {x: -6, y: 0, z: -1}
+    - {x: -6, y: 0, z: 0}
+    - {x: -6, y: 0, z: 1}
+    - {x: -6, y: 1, z: -2}
+    - {x: -6, y: 1, z: -1}
+    - {x: -6, y: 1, z: 0}
+    - {x: -6, y: 1, z: 1}
+    - {x: -6, y: 2, z: -2}
+    - {x: -6, y: 2, z: -1}
+    - {x: -6, y: 2, z: 0}
+    - {x: -6, y: 2, z: 1}
+    - {x: -5, y: -2, z: -4}
+    - {x: -5, y: -2, z: -3}
+    - {x: -5, y: -2, z: -2}
+    - {x: -5, y: -2, z: -1}
+    - {x: -5, y: -2, z: 0}
+    - {x: -5, y: -2, z: 1}
+    - {x: -5, y: -2, z: 2}
+    - {x: -5, y: -2, z: 3}
+    - {x: -5, y: -1, z: -4}
+    - {x: -5, y: -1, z: -3}
+    - {x: -5, y: -1, z: -1}
+    - {x: -5, y: -1, z: 0}
+    - {x: -5, y: -1, z: 2}
+    - {x: -5, y: -1, z: 3}
+    - {x: -5, y: 0, z: -4}
+    - {x: -5, y: 0, z: -3}
+    - {x: -5, y: 0, z: -1}
+    - {x: -5, y: 0, z: 0}
+    - {x: -5, y: 0, z: 2}
+    - {x: -5, y: 0, z: 3}
+    - {x: -5, y: 1, z: -4}
+    - {x: -5, y: 1, z: -3}
+    - {x: -5, y: 1, z: -1}
+    - {x: -5, y: 1, z: 0}
+    - {x: -5, y: 1, z: 2}
+    - {x: -5, y: 1, z: 3}
+    - {x: -5, y: 2, z: -4}
+    - {x: -5, y: 2, z: -3}
+    - {x: -5, y: 2, z: -2}
+    - {x: -5, y: 2, z: -1}
+    - {x: -5, y: 2, z: 0}
+    - {x: -5, y: 2, z: 1}
+    - {x: -5, y: 2, z: 2}
+    - {x: -5, y: 2, z: 3}
+    - {x: -4, y: -2, z: -5}
+    - {x: -4, y: -2, z: -4}
+    - {x: -4, y: -2, z: -3}
+    - {x: -4, y: -2, z: -2}
+    - {x: -4, y: -2, z: 2}
+    - {x: -4, y: -2, z: 3}
+    - {x: -4, y: -2, z: 4}
+    - {x: -4, y: -1, z: -5}
+    - {x: -4, y: -1, z: -3}
+    - {x: -4, y: -1, z: -2}
+    - {x: -4, y: -1, z: 1}
+    - {x: -4, y: -1, z: 4}
+    - {x: -4, y: 0, z: -5}
+    - {x: -4, y: 0, z: -3}
+    - {x: -4, y: 0, z: -2}
+    - {x: -4, y: 0, z: 1}
+    - {x: -4, y: 0, z: 4}
+    - {x: -4, y: 1, z: -5}
+    - {x: -4, y: 1, z: -3}
+    - {x: -4, y: 1, z: -2}
+    - {x: -4, y: 1, z: 1}
+    - {x: -4, y: 1, z: 4}
+    - {x: -4, y: 2, z: -5}
+    - {x: -4, y: 2, z: -4}
+    - {x: -4, y: 2, z: -3}
+    - {x: -4, y: 2, z: -2}
+    - {x: -4, y: 2, z: 1}
+    - {x: -4, y: 2, z: 2}
+    - {x: -4, y: 2, z: 3}
+    - {x: -4, y: 2, z: 4}
+    - {x: -3, y: -2, z: -5}
+    - {x: -3, y: -2, z: -4}
+    - {x: -3, y: -2, z: 2}
+    - {x: -3, y: -2, z: 3}
+    - {x: -3, y: -2, z: 4}
+    - {x: -3, y: -1, z: -5}
+    - {x: -3, y: -1, z: -4}
+    - {x: -3, y: -1, z: 2}
+    - {x: -3, y: -1, z: 4}
+    - {x: -3, y: 0, z: -5}
+    - {x: -3, y: 0, z: -4}
+    - {x: -3, y: 0, z: 2}
+    - {x: -3, y: 0, z: 4}
+    - {x: -3, y: 1, z: -5}
+    - {x: -3, y: 1, z: -4}
+    - {x: -3, y: 1, z: 2}
+    - {x: -3, y: 1, z: 4}
+    - {x: -3, y: 2, z: -5}
+    - {x: -3, y: 2, z: -4}
+    - {x: -3, y: 2, z: 2}
+    - {x: -3, y: 2, z: 3}
+    - {x: -3, y: 2, z: 4}
+    - {x: -2, y: -2, z: -6}
+    - {x: -2, y: -2, z: -5}
+    - {x: -2, y: -2, z: -2}
+    - {x: -2, y: -2, z: -1}
+    - {x: -2, y: -2, z: 3}
+    - {x: -2, y: -2, z: 4}
+    - {x: -2, y: -2, z: 5}
+    - {x: -2, y: -1, z: -6}
+    - {x: -2, y: -1, z: -5}
+    - {x: -2, y: -1, z: -2}
+    - {x: -2, y: -1, z: -1}
+    - {x: -2, y: -1, z: 3}
+    - {x: -2, y: -1, z: 5}
+    - {x: -2, y: 0, z: -6}
+    - {x: -2, y: 0, z: -5}
+    - {x: -2, y: 0, z: -2}
+    - {x: -2, y: 0, z: -1}
+    - {x: -2, y: 0, z: 3}
+    - {x: -2, y: 0, z: 5}
+    - {x: -2, y: 1, z: -6}
+    - {x: -2, y: 1, z: -5}
+    - {x: -2, y: 1, z: -2}
+    - {x: -2, y: 1, z: -1}
+    - {x: -2, y: 1, z: 3}
+    - {x: -2, y: 1, z: 5}
+    - {x: -2, y: 2, z: -6}
+    - {x: -2, y: 2, z: -5}
+    - {x: -2, y: 2, z: -2}
+    - {x: -2, y: 2, z: -1}
+    - {x: -2, y: 2, z: 3}
+    - {x: -2, y: 2, z: 4}
+    - {x: -2, y: 2, z: 5}
+    - {x: -1, y: -2, z: -6}
+    - {x: -1, y: -2, z: -5}
+    - {x: -1, y: -2, z: -3}
+    - {x: -1, y: -2, z: 0}
+    - {x: -1, y: -2, z: 4}
+    - {x: -1, y: -2, z: 5}
+    - {x: -1, y: -1, z: -6}
+    - {x: -1, y: -1, z: -5}
+    - {x: -1, y: -1, z: -3}
+    - {x: -1, y: -1, z: -2}
+    - {x: -1, y: -1, z: -1}
+    - {x: -1, y: -1, z: 0}
+    - {x: -1, y: -1, z: 4}
+    - {x: -1, y: -1, z: 5}
+    - {x: -1, y: 0, z: -6}
+    - {x: -1, y: 0, z: -5}
+    - {x: -1, y: 0, z: -3}
+    - {x: -1, y: 0, z: 0}
+    - {x: -1, y: 0, z: 4}
+    - {x: -1, y: 0, z: 5}
+    - {x: -1, y: 1, z: -6}
+    - {x: -1, y: 1, z: -5}
+    - {x: -1, y: 1, z: -3}
+    - {x: -1, y: 1, z: -2}
+    - {x: -1, y: 1, z: -1}
+    - {x: -1, y: 1, z: 0}
+    - {x: -1, y: 1, z: 4}
+    - {x: -1, y: 1, z: 5}
+    - {x: -1, y: 2, z: -6}
+    - {x: -1, y: 2, z: -5}
+    - {x: -1, y: 2, z: -3}
+    - {x: -1, y: 2, z: 0}
+    - {x: -1, y: 2, z: 4}
+    - {x: -1, y: 2, z: 5}
+    - {x: 0, y: -2, z: -6}
+    - {x: 0, y: -2, z: -3}
+    - {x: 0, y: -2, z: 0}
+    - {x: 0, y: -2, z: 4}
+    - {x: 0, y: -2, z: 5}
+    - {x: 0, y: -1, z: -6}
+    - {x: 0, y: -1, z: -5}
+    - {x: 0, y: -1, z: -3}
+    - {x: 0, y: -1, z: -2}
+    - {x: 0, y: -1, z: -1}
+    - {x: 0, y: -1, z: 0}
+    - {x: 0, y: -1, z: 4}
+    - {x: 0, y: -1, z: 5}
+    - {x: 0, y: 0, z: -6}
+    - {x: 0, y: 0, z: -5}
+    - {x: 0, y: 0, z: -3}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 4}
+    - {x: 0, y: 0, z: 5}
+    - {x: 0, y: 1, z: -6}
+    - {x: 0, y: 1, z: -5}
+    - {x: 0, y: 1, z: -3}
+    - {x: 0, y: 1, z: -2}
+    - {x: 0, y: 1, z: -1}
+    - {x: 0, y: 1, z: 0}
+    - {x: 0, y: 1, z: 4}
+    - {x: 0, y: 1, z: 5}
+    - {x: 0, y: 2, z: -6}
+    - {x: 0, y: 2, z: -5}
+    - {x: 0, y: 2, z: -3}
+    - {x: 0, y: 2, z: 0}
+    - {x: 0, y: 2, z: 4}
+    - {x: 0, y: 2, z: 5}
+    - {x: 1, y: -2, z: -6}
+    - {x: 1, y: -2, z: -5}
+    - {x: 1, y: -2, z: -2}
+    - {x: 1, y: -2, z: -1}
+    - {x: 1, y: -2, z: 3}
+    - {x: 1, y: -2, z: 4}
+    - {x: 1, y: -2, z: 5}
+    - {x: 1, y: -1, z: -6}
+    - {x: 1, y: -1, z: -5}
+    - {x: 1, y: -1, z: -2}
+    - {x: 1, y: -1, z: -1}
+    - {x: 1, y: -1, z: 3}
+    - {x: 1, y: -1, z: 5}
+    - {x: 1, y: 0, z: -6}
+    - {x: 1, y: 0, z: -5}
+    - {x: 1, y: 0, z: -2}
+    - {x: 1, y: 0, z: -1}
+    - {x: 1, y: 0, z: 3}
+    - {x: 1, y: 0, z: 5}
+    - {x: 1, y: 1, z: -6}
+    - {x: 1, y: 1, z: -5}
+    - {x: 1, y: 1, z: -2}
+    - {x: 1, y: 1, z: -1}
+    - {x: 1, y: 1, z: 3}
+    - {x: 1, y: 1, z: 5}
+    - {x: 1, y: 2, z: -6}
+    - {x: 1, y: 2, z: -5}
+    - {x: 1, y: 2, z: -2}
+    - {x: 1, y: 2, z: -1}
+    - {x: 1, y: 2, z: 3}
+    - {x: 1, y: 2, z: 4}
+    - {x: 1, y: 2, z: 5}
+    - {x: 2, y: -2, z: -5}
+    - {x: 2, y: -2, z: -4}
+    - {x: 2, y: -2, z: 2}
+    - {x: 2, y: -2, z: 3}
+    - {x: 2, y: -2, z: 4}
+    - {x: 2, y: -1, z: -5}
+    - {x: 2, y: -1, z: -4}
+    - {x: 2, y: -1, z: 2}
+    - {x: 2, y: -1, z: 4}
+    - {x: 2, y: 0, z: -5}
+    - {x: 2, y: 0, z: -4}
+    - {x: 2, y: 0, z: 2}
+    - {x: 2, y: 0, z: 4}
+    - {x: 2, y: 1, z: -5}
+    - {x: 2, y: 1, z: -4}
+    - {x: 2, y: 1, z: 2}
+    - {x: 2, y: 1, z: 4}
+    - {x: 2, y: 2, z: -5}
+    - {x: 2, y: 2, z: -4}
+    - {x: 2, y: 2, z: 2}
+    - {x: 2, y: 2, z: 3}
+    - {x: 2, y: 2, z: 4}
+    - {x: 3, y: -2, z: -5}
+    - {x: 3, y: -2, z: -4}
+    - {x: 3, y: -2, z: -3}
+    - {x: 3, y: -2, z: -2}
+    - {x: 3, y: -2, z: 1}
+    - {x: 3, y: -2, z: 2}
+    - {x: 3, y: -2, z: 3}
+    - {x: 3, y: -2, z: 4}
+    - {x: 3, y: -1, z: -5}
+    - {x: 3, y: -1, z: -3}
+    - {x: 3, y: -1, z: -2}
+    - {x: 3, y: -1, z: 1}
+    - {x: 3, y: -1, z: 4}
+    - {x: 3, y: 0, z: -5}
+    - {x: 3, y: 0, z: -3}
+    - {x: 3, y: 0, z: -2}
+    - {x: 3, y: 0, z: 1}
+    - {x: 3, y: 0, z: 4}
+    - {x: 3, y: 1, z: -5}
+    - {x: 3, y: 1, z: -3}
+    - {x: 3, y: 1, z: -2}
+    - {x: 3, y: 1, z: 1}
+    - {x: 3, y: 1, z: 4}
+    - {x: 3, y: 2, z: -5}
+    - {x: 3, y: 2, z: -4}
+    - {x: 3, y: 2, z: -3}
+    - {x: 3, y: 2, z: -2}
+    - {x: 3, y: 2, z: 1}
+    - {x: 3, y: 2, z: 2}
+    - {x: 3, y: 2, z: 3}
+    - {x: 3, y: 2, z: 4}
+    - {x: 4, y: -2, z: -4}
+    - {x: 4, y: -2, z: -3}
+    - {x: 4, y: -2, z: -2}
+    - {x: 4, y: -2, z: -1}
+    - {x: 4, y: -2, z: 0}
+    - {x: 4, y: -2, z: 1}
+    - {x: 4, y: -2, z: 2}
+    - {x: 4, y: -2, z: 3}
+    - {x: 4, y: -1, z: -4}
+    - {x: 4, y: -1, z: -3}
+    - {x: 4, y: -1, z: -1}
+    - {x: 4, y: -1, z: 0}
+    - {x: 4, y: -1, z: 2}
+    - {x: 4, y: -1, z: 3}
+    - {x: 4, y: 0, z: -4}
+    - {x: 4, y: 0, z: -3}
+    - {x: 4, y: 0, z: -1}
+    - {x: 4, y: 0, z: 0}
+    - {x: 4, y: 0, z: 2}
+    - {x: 4, y: 0, z: 3}
+    - {x: 4, y: 1, z: -4}
+    - {x: 4, y: 1, z: -3}
+    - {x: 4, y: 1, z: -1}
+    - {x: 4, y: 1, z: 0}
+    - {x: 4, y: 1, z: 2}
+    - {x: 4, y: 1, z: 3}
+    - {x: 4, y: 2, z: -4}
+    - {x: 4, y: 2, z: -3}
+    - {x: 4, y: 2, z: -2}
+    - {x: 4, y: 2, z: -1}
+    - {x: 4, y: 2, z: 0}
+    - {x: 4, y: 2, z: 1}
+    - {x: 4, y: 2, z: 2}
+    - {x: 4, y: 2, z: 3}
+    - {x: 5, y: -2, z: -2}
+    - {x: 5, y: -2, z: -1}
+    - {x: 5, y: -2, z: 0}
+    - {x: 5, y: -2, z: 1}
+    - {x: 5, y: -1, z: -2}
+    - {x: 5, y: -1, z: -1}
+    - {x: 5, y: -1, z: 0}
+    - {x: 5, y: -1, z: 1}
+    - {x: 5, y: 0, z: -2}
+    - {x: 5, y: 0, z: -1}
+    - {x: 5, y: 0, z: 0}
+    - {x: 5, y: 0, z: 1}
+    - {x: 5, y: 1, z: -2}
+    - {x: 5, y: 1, z: -1}
+    - {x: 5, y: 1, z: 0}
+    - {x: 5, y: 1, z: 1}
+    - {x: 5, y: 2, z: -2}
+    - {x: 5, y: 2, z: -1}
+    - {x: 5, y: 2, z: 0}
+    - {x: 5, y: 2, z: 1}
+  - depth: 1
+    colorType: 8
+    voxelPositions:
+    - {x: -5, y: -1, z: -2}
+    - {x: -5, y: -1, z: 1}
+    - {x: -5, y: 0, z: -2}
+    - {x: -5, y: 0, z: 1}
+    - {x: -5, y: 1, z: -2}
+    - {x: -5, y: 1, z: 1}
+    - {x: -4, y: -1, z: -4}
+    - {x: -4, y: -1, z: 2}
+    - {x: -4, y: -1, z: 3}
+    - {x: -4, y: 0, z: -4}
+    - {x: -4, y: 0, z: 2}
+    - {x: -4, y: 0, z: 3}
+    - {x: -4, y: 1, z: -4}
+    - {x: -4, y: 1, z: 2}
+    - {x: -4, y: 1, z: 3}
+    - {x: -3, y: -1, z: 3}
+    - {x: -3, y: 0, z: 3}
+    - {x: -3, y: 1, z: 3}
+    - {x: -2, y: -1, z: 4}
+    - {x: -2, y: 0, z: 4}
+    - {x: -2, y: 1, z: 4}
+    - {x: -1, y: 0, z: -2}
+    - {x: -1, y: 0, z: -1}
+    - {x: 0, y: 0, z: -2}
+    - {x: 0, y: 0, z: -1}
+    - {x: 1, y: -1, z: 4}
+    - {x: 1, y: 0, z: 4}
+    - {x: 1, y: 1, z: 4}
+    - {x: 2, y: -1, z: 3}
+    - {x: 2, y: 0, z: 3}
+    - {x: 2, y: 1, z: 3}
+    - {x: 3, y: -1, z: -4}
+    - {x: 3, y: -1, z: 2}
+    - {x: 3, y: -1, z: 3}
+    - {x: 3, y: 0, z: -4}
+    - {x: 3, y: 0, z: 2}
+    - {x: 3, y: 0, z: 3}
+    - {x: 3, y: 1, z: -4}
+    - {x: 3, y: 1, z: 2}
+    - {x: 3, y: 1, z: 3}
+    - {x: 4, y: -1, z: -2}
+    - {x: 4, y: -1, z: 1}
+    - {x: 4, y: 0, z: -2}
+    - {x: 4, y: 0, z: 1}
+    - {x: 4, y: 1, z: -2}
+    - {x: 4, y: 1, z: 1}
+  iceWrapperData: []
+  largeVoxelData: []
+  doubleLargeVoxelData: []
+  giftWrapperData: []
+  playpenData: []
+  shrinkingCoverData: []
+  bombData: []
+  colorBoxData: []
+  shieldData: []
+  flyingPiggyData: []
+  blasters:
+  - id: 1000
+    sourceId: 0
+    type: 0
+    color: 8
+    secondaryColor: 0
+    bulletCount: 39
+    isHidden: 0
+    iceHp: 0
+    isPilot: 0
+    isChained: 0
+    connectedBlasterIds: 
+    chainedBlasterIds: 
+    innerBlasterIds: 
+  - id: 1001
+    sourceId: 0
+    type: 0
+    color: 8
+    secondaryColor: 0
+    bulletCount: 39
+    isHidden: 0
+    iceHp: 0
+    isPilot: 0
+    isChained: 0
+    connectedBlasterIds: 
+    chainedBlasterIds: 
+    innerBlasterIds: 
+  - id: 1002
+    sourceId: 0
+    type: 0
+    color: 8
+    secondaryColor: 0
+    bulletCount: 39
+    isHidden: 0
+    iceHp: 0
+    isPilot: 0
+    isChained: 0
+    connectedBlasterIds: 
+    chainedBlasterIds: 
+    innerBlasterIds: 
+  - id: 1003
+    sourceId: 0
+    type: 0
+    color: 8
+    secondaryColor: 0
+    bulletCount: 39
+    isHidden: 0
+    iceHp: 0
+    isPilot: 0
+    isChained: 0
+    connectedBlasterIds: 
+    chainedBlasterIds: 
+    innerBlasterIds: 
+  - id: 1004
+    sourceId: 0
+    type: 0
+    color: 8
+    secondaryColor: 0
+    bulletCount: 39
+    isHidden: 0
+    iceHp: 0
+    isPilot: 0
+    isChained: 0
+    connectedBlasterIds: 
+    chainedBlasterIds: 
+    innerBlasterIds: 
+  - id: 1005
+    sourceId: 0
+    type: 0
+    color: 8
+    secondaryColor: 0
+    bulletCount: 39
+    isHidden: 0
+    iceHp: 0
+    isPilot: 0
+    isChained: 0
+    connectedBlasterIds: 
+    chainedBlasterIds: 
+    innerBlasterIds: 
+  - id: 1006
+    sourceId: 0
+    type: 0
+    color: 8
+    secondaryColor: 0
+    bulletCount: 39
+    isHidden: 0
+    iceHp: 0
+    isPilot: 0
+    isChained: 0
+    connectedBlasterIds: 
+    chainedBlasterIds: 
+    innerBlasterIds: 
+  - id: 1007
+    sourceId: 0
+    type: 0
+    color: 8
+    secondaryColor: 0
+    bulletCount: 39
+    isHidden: 0
+    iceHp: 0
+    isPilot: 0
+    isChained: 0
+    connectedBlasterIds: 
+    chainedBlasterIds: 
+    innerBlasterIds: 
+  - id: 1008
+    sourceId: 0
+    type: 0
+    color: 8
+    secondaryColor: 0
+    bulletCount: 39
+    isHidden: 0
+    iceHp: 0
+    isPilot: 0
+    isChained: 0
+    connectedBlasterIds: 
+    chainedBlasterIds: 
+    innerBlasterIds: 
+  - id: 1009
+    sourceId: 0
+    type: 0
+    color: 8
+    secondaryColor: 0
+    bulletCount: 39
+    isHidden: 0
+    iceHp: 0
+    isPilot: 0
+    isChained: 0
+    connectedBlasterIds: 
+    chainedBlasterIds: 
+    innerBlasterIds: 
+  dockColumns:
+  - blasterIds: e8030000ed030000
+  - blasterIds: e9030000ee030000
+  - blasterIds: ea030000ef030000
+  - blasterIds: eb030000f0030000
+  - blasterIds: ec030000f1030000

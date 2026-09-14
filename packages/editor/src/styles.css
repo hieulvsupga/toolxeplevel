@@ -132,7 +132,9 @@ body,
   gap: 4px;
   align-items: center;
   flex-wrap: wrap;
-  max-width: 320px;
+  /* 9 ô mỗi hàng: bảng màu game chỉ có 17 ô (16 màu + ô tường) nên xuống đúng 2 hàng 9 + 8. Viết
+     bằng calc theo cỡ ô + gap để đổi cỡ ô là số này tự đúng, khỏi phải nhớ một con số rời. */
+  max-width: calc(9 * 22px + 8 * 4px);
 }
 
 .swatches .swatch {
@@ -452,7 +454,9 @@ body,
   top: 56px;
   right: 104px;
   z-index: 45;
-  width: 510px;
+  /* Rộng hơn hẳn vì thân panel giờ là HAI khung cạnh nhau: lưới hàng chờ bên trái, phần điều
+     khiển bên phải. Xếp dọc như trước thì lưới bị đẩy xuống giữa và phải cuộn suốt. */
+  width: 940px;
   /* Trừ cả khoảng 104px chừa bên phải, không thì ở cửa sổ hẹp panel tràn qua mép trái. */
   max-width: calc(100vw - 128px);
   max-height: calc(100vh - 72px);
@@ -482,12 +486,36 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
+/* Thân panel: hai khung ngang, MỖI KHUNG tự cuộn. Không để cả thân cuộn chung, vì như vậy là
+   quay lại đúng cái phải cuộn qua lưới mới tới ô sửa. */
 .bl-dock-body {
-  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   padding: 8px 10px 10px;
+  display: flex;
+  gap: 12px;
+}
+
+.bl-pane {
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* Khung trái co giãn theo panel — số hàng chờ mỗi level một khác. */
+.bl-pane-grid {
+  flex: 1;
+  min-width: 0;
+}
+
+.bl-pane-side {
+  width: 340px;
+  flex: none;
+  border-left: 1px solid #34343c;
+  padding-left: 12px;
 }
 
 .bl-dock-sub {
@@ -680,9 +708,9 @@ body,
 /* Mỗi hàng chờ = 1 cột dọc, các cột xếp cạnh nhau từ trái sang.
    Cuộn ở KHUNG NGOÀI, không cuộn trong từng cột: các đoạn nối chạy ngang giữa hai cột, mà mỗi cột
    cuộn riêng thì hai đầu dây trôi lệch nhau và đoạn nối chỉ vào chỗ trống. */
+/* Bỏ trần chiều cao: khung trái đã tự cuộn, chặn thêm ở đây là sinh ra hai thanh cuộn lồng nhau. */
 .bl-cols {
-  overflow: auto;
-  max-height: 260px;
+  overflow-x: auto;
   padding: 6px;
   border: 1px solid #34343c;
   border-radius: 7px;
@@ -807,26 +835,121 @@ body,
   border-left: none;
 }
 
-.bl-swatches-2 {
-  margin-top: -4px;
+/* Màu 2 (Double) trong ô sửa khẩu: dropdown chiếm cả hai cột của lưới, kèm một ô màu để thấy ngay
+   khẩu này đang có màu 2 hay không. */
+.bl-edit-second {
+  grid-column: 1 / -1;
 }
 
-.bl-second-off {
+/* Nút mở lưới màu 2: trông như một ô chọn, nhưng mở ra ô MÀU chứ không phải tên màu. */
+.bl-second-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: #1c1c22;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.bl-second-btn:hover,
+.bl-second-btn.open {
+  border-color: #55555f;
+}
+
+.bl-second-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bl-second-caret {
+  color: #8a8a95;
+  font-size: 10px;
+}
+
+/* Lưới bung ra NGAY TRONG luồng (không phải popup nổi): khung phải của panel có overflow riêng nên
+   popup tuyệt đối sẽ bị cắt mất nửa dưới. */
+.bl-second-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 6px;
+  background: #1c1c22;
+  border: 1px solid #4a4a56;
+  border-radius: 7px;
+}
+
+.bl-second-none {
+  background: #22222a;
+  color: #cfcfd6;
+  border: 1px solid #3c3c46;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.bl-second-none.active {
+  border-color: #7fd6ff;
+}
+
+.bl-second-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+
+.bl-second-sw {
+  height: 22px;
+  border: 1px solid #3c3c46;
+  border-radius: 5px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.bl-second-sw.active {
+  border-color: #fff;
+  box-shadow:
+    0 0 0 2px #1c1c22,
+    0 0 0 3px #7fd6ff;
+}
+
+/* Màu đang là màu 1: gạch chéo cho thấy không chọn được, thay vì chỉ mờ đi. */
+.bl-second-sw:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+  background-image: linear-gradient(
+    135deg,
+    transparent 45%,
+    #1c1c22 45%,
+    #1c1c22 55%,
+    transparent 55%
+  );
+}
+
+.bl-second-dot {
   width: 16px;
   height: 16px;
+  flex: none;
   border-radius: 4px;
   border: 1px solid #3c3c46;
-  background: #1c1c22;
-  color: #8a8a95;
-  font-size: 9px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0;
 }
 
-.bl-second-off.active {
-  border-color: #fff;
-  color: #e8e8ec;
+/* Không dùng màu 2: ô để trống, viền gạch đứt — khác hẳn một ô màu thật. */
+.bl-second-dot.off {
+  border-style: dashed;
+  border-color: #55555f;
+  background: #1c1c22;
 }
 
 .bl-mini-swatches {
@@ -1036,7 +1159,8 @@ body,
   gap: 6px;
 }
 
-.bl-edit-grid label {
+.bl-edit-grid label,
+.bl-edit-grid .bl-edit-second {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -2263,7 +2387,11 @@ body,
   top: 120px;
   right: 12px;
   z-index: 20;
-  width: 214px;
+  /* Rộng thêm (was 214) vì giờ có 4 nhóm 6 nút: hẹp hơn thì nhãn "−X" trên nút bị cắt. Và tự cuộn
+     khi cửa sổ thấp, không thì mấy hàng cuối (Copy/Dán/Xoá) rơi ra ngoài màn hình. */
+  width: 246px;
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -2629,4 +2757,559 @@ body,
 .ex-preview-reset:hover {
   background: #38384280;
   border-color: #55555f;
+}
+
+/* ---- Bảng hướng dẫn sử dụng ---- */
+.modal.guide-modal {
+  width: 880px;
+  /* Cao cố định: mục lục dính bên trái, nội dung cuộn bên phải — để cả modal cuộn thì
+     mục lục trôi đi mất. */
+  height: 86vh;
+  max-height: 86vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.gd-search {
+  width: 100%;
+  background: #1c1c22;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.guide-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 14px;
+}
+
+.gd-nav {
+  width: 210px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  border-right: 1px solid #34343c;
+  padding-right: 8px;
+}
+
+.gd-nav button {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #cfcfd6;
+  font-size: 12px;
+  text-align: left;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.gd-nav button:hover {
+  background: #38384280;
+  border-color: #55555f;
+}
+
+.gd-nav-empty {
+  font-size: 11px;
+  color: #7a7a85;
+  padding: 6px 8px;
+}
+
+.gd-doc {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  position: relative;
+}
+
+.gd-doc section {
+  margin-bottom: 20px;
+}
+
+.gd-h {
+  font-size: 14px;
+  color: #e8e8ec;
+  margin: 0 0 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid #34343c;
+}
+
+.gd-p {
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #cfcfd6;
+  margin: 0 0 8px;
+}
+
+.gd-ul,
+.gd-ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #cfcfd6;
+}
+
+.gd-ul li,
+.gd-ol li {
+  margin-bottom: 4px;
+}
+
+/* Bảng phím tắt: hai cột, phím bên trái cùng độ rộng cho dễ quét mắt. */
+.gd-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 10px;
+}
+
+.gd-key {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12.5px;
+  color: #cfcfd6;
+}
+
+.gd-key kbd {
+  flex: none;
+  width: 170px;
+  background: #1c1c22;
+  border: 1px solid #3c3c46;
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: #e8e8ec;
+  text-align: center;
+}
+
+.gd-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #e8c07a;
+  background: #3a2f1c;
+  border: 1px solid #5c4a24;
+  border-radius: 7px;
+  padding: 8px 10px;
+  margin: 0 0 10px;
+}
+
+.gd-end {
+  font-size: 11px;
+  color: #7a7a85;
+  border-top: 1px solid #34343c;
+  padding-top: 10px;
+  line-height: 1.6;
+}
+
+/* ---------- Bảng "Chia nhỏ khối" ---------- */
+/* Viết kèm `.modal` như `.ex-modal`/`.ab-modal` ở trên: cùng độ ưu tiên với `.modal { width: 340px }`
+   thì thứ tự trong file quyết định, thêm class cho khỏi phụ thuộc chỗ đặt. */
+.modal.sd-modal {
+  width: 420px;
+}
+
+.sd-fields {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.sd-fields label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #c8c8d0;
+}
+
+.sd-fields input {
+  width: 68px;
+  background: #1c1c22;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 6px;
+  padding: 5px 7px;
+  font-size: 13px;
+}
+
+.sd-formula {
+  font-size: 12px;
+  color: #9a9aa5;
+}
+
+.sd-formula b {
+  color: #e8e8ec;
+}
+
+.sd-compare {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #1c1c22;
+  border: 1px solid #34343c;
+  border-radius: 7px;
+  padding: 9px 12px;
+}
+
+.sd-col {
+  flex: 1;
+}
+
+.sd-col-label {
+  font-size: 11px;
+  color: #9a9aa5;
+}
+
+.sd-col-num {
+  font-size: 16px;
+  color: #e8e8ec;
+}
+
+.sd-col-num.sd-over {
+  color: #ff7a90;
+}
+
+.sd-col-sub {
+  font-size: 11px;
+  color: #9a9aa5;
+}
+
+.sd-arrow {
+  color: #9a9aa5;
+  font-size: 15px;
+}
+
+/* Ô màu của một màu mà hình KHÔNG còn khối nào — chỉ xuất hiện khi chính khẩu súng đang mang màu
+   đó (nhập từ .asset, hoặc vừa xoá hết khối màu ấy). Gạch chéo + mờ để phân biệt ngay với các màu
+   đang có khối, nhưng vẫn bấm được vì đó là màu khẩu đang dùng. */
+.bl-swatches .swatch.gone,
+.bl-mini-swatches .swatch.gone,
+.bl-second-sw.gone {
+  border-style: dashed;
+  border-color: #7a7a85;
+  opacity: 0.55;
+}
+
+.bl-no-color {
+  font-size: 11px;
+  color: #9a9aa5;
+}
+
+/* ---------- Ngòi vẽ của bảng nhập ảnh ---------- */
+/* Lưới và khung ngòi là hai canvas chồng nhau: khung ngòi đổi theo từng lần nhích chuột, còn lưới
+   thì không — vẽ chung một canvas là mỗi lần rê chuột phải tô lại tới 200×200 ô. */
+.import-canvas-wrap {
+  position: relative;
+  line-height: 0;
+}
+
+.import-brush-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  /* Chuột phải rơi xuống canvas lưới bên dưới, không thì không vẽ được ô nào. */
+  pointer-events: none;
+}
+
+.brush-range {
+  width: 92px;
+  accent-color: #4b86c9;
+}
+
+/* ---------- Bảng gán màu của bảng nhập model ---------- */
+.model-colors {
+  width: 268px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #1c1c22;
+  border: 1px solid #34343c;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 12px;
+}
+
+.model-colors-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.model-colors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.model-color-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.model-color-row select {
+  flex: 1;
+  min-width: 0;
+  background: #22222a;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 6px;
+  padding: 3px 4px;
+  font-size: 11px;
+}
+
+.model-color-arrow {
+  color: #9a9aa5;
+}
+
+.model-color-count {
+  color: #9a9aa5;
+  min-width: 34px;
+  text-align: right;
+}
+
+/* Nhóm phải nhường màu gần nhất cho nhóm khác — đúng chỗ đáng để mắt vào khi màu ra không như mong. */
+.model-color-moved {
+  color: #7fd6ff;
+}
+
+.import-stage.light .model-colors {
+  background: #ffffff;
+  border-color: #c4c8d2;
+  color: #333;
+}
+
+/* Danh sách layer khi nhúng trong bảng 🎨 Tô lớp: cột cố định bên trái, không còn nổi trên scene. */
+.layer-list.embedded {
+  position: static;
+  transform: none;
+  flex: none;
+  width: 236px;
+  max-height: none;
+  height: auto;
+  border: 0;
+  border-right: 1px solid #34343c;
+  border-radius: 0;
+  background: #1a1a20;
+  backdrop-filter: none;
+  z-index: auto;
+}
+
+/* Cột nhúng cao bằng cả bảng, nên phần danh sách phải tự cuộn: thiếu min-height:0 thì flex item
+   không co xuống dưới chiều cao nội dung và danh sách dài sẽ tràn ra khỏi bảng. */
+.layer-list.embedded .layer-rows {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Cột màu khi nhúng trong bảng 🎨 Tô lớp — cùng lối như .layer-list.embedded. */
+.color-legend.embedded {
+  position: static;
+  transform: none;
+  flex: none;
+  width: 96px;
+  max-height: none;
+  border: 0;
+  border-left: 1px solid #34343c;
+  border-radius: 0;
+  background: #1a1a20;
+  backdrop-filter: none;
+  z-index: auto;
+}
+
+.color-legend.embedded .legend-list {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Ô nhập số tầng trong bảng 🎨 Tô lớp: chỉ chứa 1–3 chữ số nên bó hẹp lại, khỏi kéo dài cả nhóm. */
+.slice-num {
+  width: 46px;
+  text-align: center;
+}
+
+/* ---------- Khung kéo của công cụ Chọn 2D ---------- */
+.marquee {
+  position: absolute;
+  z-index: 30;
+  border: 1px solid #ffb14e;
+  background: rgba(255, 177, 78, 0.14);
+  /* Khung chỉ để nhìn: chuột phải rơi xuống canvas bên dưới, không thì cú kéo tự chặn chính nó. */
+  pointer-events: none;
+}
+
+/* Giữ Ctrl = chọn thêm: đổi màu để biết cú kéo này cộng vào vùng cũ chứ không thay nó. */
+.marquee.adding {
+  border-color: #7fd6ff;
+  background: rgba(127, 214, 255, 0.14);
+  border-style: dashed;
+}
+
+/* Chế độ Chọn 2D: chuột trái là kéo khung chọn, không phải xoay camera. */
+.canvas-wrap.picking {
+  cursor: crosshair;
+}
+
+/* Hàng nút quay cụm trong bảng vùng chọn: 6 nút nhỏ (↺↻ cho mỗi trục) chia đều một hàng. */
+.sel-rots {
+  display: flex;
+  gap: 4px;
+}
+
+/* Một nhóm nút theo trục: nhãn trên dòng riêng, 6 nút chia đều bề ngang panel bên dưới. */
+.sel-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sel-group-name {
+  font-size: 10px;
+  color: #8a8a95;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sel-rot-pair {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sel-hud .sel-rot-pair button {
+  padding: 4px 2px;
+  font-size: 11px;
+  letter-spacing: -0.5px;
+}
+
+/* Thùng rác ở dòng depth: cùng cỡ nút solo, nhưng đỏ lên khi trỏ vào — nó là nút xoá. */
+.layer-del {
+  flex: none;
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 4px;
+  border-radius: 4px;
+  color: #6a6a75;
+}
+
+.layer-del:hover {
+  color: #ff9db0;
+  background: #5a273080;
+}
+
+/* ---------- Danh sách lớp bọc (góc dưới-trái) ---------- */
+.wrap-list {
+  position: fixed;
+  left: 10px;
+  bottom: 14px;
+  z-index: 40;
+  width: 250px;
+  max-height: 38vh;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(28, 28, 34, 0.92);
+  border: 1px solid #34556b;
+  border-radius: 8px;
+  padding: 6px;
+  font-size: 12px;
+  color: #e8e8ec;
+  backdrop-filter: blur(4px);
+}
+
+.wrap-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 0 3px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.wrap-row:hover {
+  background: #2a3a4880;
+}
+
+/* Dòng đang soi: nền sáng + viền xanh băng, khớp với cái hộp đang sáng trắng trong scene. */
+.wrap-row.on {
+  background: #2f4a5c;
+  border-color: #7fd6ff;
+}
+
+.wrap-size {
+  flex: none;
+  color: #cfcfd6;
+}
+
+.wrap-inner {
+  flex: 1;
+  min-width: 0;
+  color: #9a9aa5;
+}
+
+.wrap-hp {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  color: #9a9aa5;
+}
+
+.wrap-hp input {
+  width: 42px;
+  background: #1c1c22;
+  color: #e8e8ec;
+  border: 1px solid #3c3c46;
+  border-radius: 5px;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+.wrap-pick {
+  flex: none;
+  color: #7fd6ff;
+  padding: 2px 4px;
+}
+
+.wrap-warn {
+  color: #ffc46b;
+}
+
+/* Chỗ soát: chỉ hiện khi có vấn đề, nên để chữ nhỏ mà vẫn đọc được cả câu dài. */
+.wrap-problems {
+  max-height: 12vh;
+  overflow-y: auto;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #ffc46b;
+  border-top: 1px solid #34343c;
+  padding-top: 5px;
+}
+
+/* Nút đổi loại lớp bọc (🧊 / 🛡) ở đầu mỗi dòng. */
+.wrap-kind {
+  flex: none;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 3px;
 }

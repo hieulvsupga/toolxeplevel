@@ -272,17 +272,3 @@ export function hexToRgb(hex: string): [number, number, number] {
   ];
 }
 
-/** Màu gần nhất trong palette (Euclid RGB). */
-export function snapToPalette(rgb: [number, number, number], palette: string[]): string {
-  let best = palette[0];
-  let bestD = Infinity;
-  for (const p of palette) {
-    const [r, g, b] = hexToRgb(p);
-    const d = dist2(rgb[0], rgb[1], rgb[2], [r, g, b]);
-    if (d < bestD) {
-      bestD = d;
-      best = p;
-    }
-  }
-  return best;
-}

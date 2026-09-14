@@ -8,3 +8,6 @@ export * from './blasters';
 export * from './autoBuild';
 export * from './unityAsset';
 export * from './solve';
+export * from './subdivide';
+export * from './paletteMap';
+export * from './wrappers';

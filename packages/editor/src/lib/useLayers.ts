@@ -70,16 +70,44 @@ export function useLayers(): { rows: LayerRow[]; hiddenVoxels: Set<string> } {
     [built, depthOverrides],
   );
 
-  const hiddenVoxels = useMemo(() => {
-    const set = new Set<string>();
-    if (!hiddenLayers.length) return set;
-    const hide = new Set(hiddenLayers);
-    for (const layer of built.layers) {
-      if (!hide.has(`${layer.depth}|${layer.colorType}`)) continue;
-      for (const p of layer.voxelPositions) set.add(VoxelGrid.key(p.x, p.y, p.z));
-    }
-    return set;
-  }, [built, hiddenLayers]);
+  const hiddenVoxels = useMemo(
+    () => hiddenSetOf(built, hiddenLayers),
+    [built, hiddenLayers],
+  );
 
   return { rows, hiddenVoxels };
+}
+
+function hiddenSetOf(built: BuildLayersResult, hiddenLayers: string[]): Set<string> {
+  const set = new Set<string>();
+  if (!hiddenLayers.length) return set;
+  const hide = new Set(hiddenLayers);
+  for (const layer of built.layers) {
+    if (!hide.has(`${layer.depth}|${layer.colorType}`)) continue;
+    for (const p of layer.voxelPositions) set.add(VoxelGrid.key(p.x, p.y, p.z));
+  }
+  return set;
+}
+
+/**
+ * Bộ lọc "ô này đang THẤY được không" — bản không-hook, để phần xử lý chuột và các thao tác vùng
+ * dùng được.
+ *
+ * Sơn / xoá / dời chỉ nên chạm tới khối đang hiện: khối bị tắt layer hoặc bị bộ lọc màu ẩn đi thì
+ * người dựng không thấy nó, mà một cú kéo vẫn sửa nó thì hỏng data mà không ai biết. Ô TRỐNG luôn
+ * tính là thấy được, nên phần ĐẶT khối không bị bộ lọc này chắn.
+ */
+export function visibleCellFilter(): (x: number, y: number, z: number) => boolean {
+  const { grid, version, hiddenLayers, colorFilter } = useEditor.getState();
+  const hidden = hiddenLayers.length ? hiddenSetOf(layersOf(grid, version), hiddenLayers) : null;
+  const keep = colorFilter.length ? new Set(colorFilter) : null;
+  if (!hidden && !keep) return () => true;
+  return (x, y, z) => {
+    if (hidden && hidden.has(VoxelGrid.key(x, y, z))) return false;
+    if (keep) {
+      const voxel = grid.get(x, y, z);
+      if (voxel && !keep.has(voxel.color)) return false;
+    }
+    return true;
+  };
 }

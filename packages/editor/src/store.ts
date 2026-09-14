@@ -11,18 +11,24 @@ import {
   gridFromLayers,
   makeBlaster,
   nextBlasterId,
+  DEFAULT_WRAPPER_HP,
+  nextWrapperId,
   parseUnityAsset,
+  subdivideGrid,
   toJSON,
   toggleConnection,
   type AutoBuildOptions,
   type AutoBuildSearchResult,
   type BlasterEntry,
+  type BoxWrapper,
   type LevelMeta,
+  type WrapperKind,
   type Vec3,
   type Voxel,
 } from '@voxel/core';
 
-export type ToolMode = 'place' | 'remove' | 'paint' | 'select';
+/** `select2d` = kéo khung trên màn hình rồi chọn các khối rơi vào khung (xem `Marquee2D`). */
+export type ToolMode = 'place' | 'remove' | 'paint' | 'select' | 'select2d';
 
 type Cell = [number, number, number];
 
@@ -35,14 +41,52 @@ interface Change {
   after?: Voxel;
 }
 
+/**
+ * Ảnh chụp các trường NGOÀI grid mà một thao tác có thể đổi kèm. Chỉ "chia nhỏ khối" dùng tới:
+ * nó nhân toạ độ lên nên số đạn / tâm / objectScale đều phải co giãn theo, và hoàn tác mà chỉ trả
+ * lại khối thì level còn nguyên bộ số của kích cỡ cũ — sai lặng lẽ, chẳng ai thấy.
+ */
+interface SideState {
+  blasters: BlasterEntry[];
+  dockColumns: number[][];
+  levelMeta: LevelMeta;
+  depthOverrides: Record<string, number>;
+  centerOverride: Vec3 | null;
+  wrappers: BoxWrapper[];
+}
+
 /** Một thao tác = 1 nhóm thay đổi (fill cả vùng cũng chỉ 1 lần undo). */
-type Batch = Change[];
+interface Batch {
+  cells: Change[];
+  /** Không có = thao tác chỉ đụng tới grid. */
+  side?: { before: SideState; after: SideState };
+}
+
+/**
+ * Lọc ô trước khi ghi, áp SAU khi đã nhân bản đối xứng — nên ô sinh ra do mirror cũng bị lọc.
+ * Dùng để thao tác không chạm tới khối đang bị ẩn (xem `visibleCellFilter`).
+ */
+export type CellFilter = (x: number, y: number, z: number) => boolean;
 
 /**
  * Tham số tạo nhanh súng. `startId`/`random` do store tự lo; `grid`/`dockCount` thì store
  * đọc từ chính state của nó, UI không phải truyền lại.
  */
 export type AutoBuildInput = Omit<AutoBuildOptions, 'startId' | 'random'>;
+
+/** Những thứ đo bằng ô lưới cần co giãn theo khi chia nhỏ khối. Xem `EditorState.subdivide`. */
+export interface SubdivideOptions {
+  /**
+   * Nhân số đạn của mọi súng lên n³. Mặc định bật: số khối từng màu vừa ×n³, mà tổng đạn phải
+   * bằng đúng số khối màu đó thì màn mới phá hết được.
+   */
+  scaleBullets?: boolean;
+  /**
+   * Chia `voxelizedObjectScale` cho n. Mặc định bật: khối giờ dài gấp n lần theo mỗi cạnh nên
+   * không thu nhỏ lại là nó phình gấp n lần trong game.
+   */
+  scaleObjectScale?: boolean;
+}
 
 /** Một voxel trong cụm đã copy — toạ độ tính từ góc nhỏ nhất của cụm. */
 export interface RelVoxel {
@@ -98,6 +142,19 @@ interface EditorState {
   centerOverride: Vec3 | null;
   /** Hiện marker gốc toạ độ trong scene. */
   showCenter: boolean;
+  /**
+   * Hiện danh sách lớp bọc (góc dưới-trái). Nằm trong store chứ không phải state của panel: nút
+   * thu gọn ở panel và nút 🧊 trên toolbar phải cùng điều khiển một thứ.
+   */
+  showWrappers: boolean;
+  toggleShowWrappers: () => void;
+  /**
+   * Lớp bọc đang được soi sáng trong scene (trỏ/bấm vào dòng trong bảng lớp bọc). Chỉ là chuyện
+   * xem cho dễ nên KHÔNG lưu vào autosave — mở lại tool thì chẳng có lý do gì còn một cái hộp
+   * đang sáng.
+   */
+  focusedWrapper: number | null;
+  setFocusedWrapper: (id: number | null) => void;
   setLevelMeta: (meta: LevelMeta) => void;
   setDepthOverrides: (overrides: Record<string, number>) => void;
   setRecenter: (recenter: boolean) => void;
@@ -131,16 +188,30 @@ interface EditorState {
   /** Nối / bỏ nối hai súng (cơ chế Connected) — luôn ghi cả hai chiều. */
   toggleBlasterConnection: (idA: number, idB: number) => void;
 
+  /**
+   * Lớp bọc dạng hộp (`iceWrapperData`). Chỉ giữ HỘP + hp; phần `innerVoxelPositions`/`hpTexts`
+   * tính lại từ grid lúc xuất, nên vẽ thêm/xoá khối bên trong là data tự đúng theo.
+   */
+  wrappers: BoxWrapper[];
+  /** Thêm lớp bọc theo một hộp (thường là hộp vùng chọn). Trả về id vừa tạo. */
+  addWrapper: (kind: WrapperKind, min: Vec3, max: Vec3, hp?: number) => number;
+  updateWrapper: (id: number, patch: Partial<Omit<BoxWrapper, 'id'>>) => void;
+  removeWrapper: (id: number) => void;
+  clearWrappers: () => void;
+
   setColor: (color: string) => void;
   toggleColorFilter: (color: string) => void;
   clearColorFilter: () => void;
   setMode: (mode: ToolMode) => void;
   toggleMirror: (axis: 'x' | 'y') => void;
 
-  /** Đặt (voxel) hoặc xóa (null) một loạt ô, gộp thành 1 undo. */
-  fill: (cells: Cell[], voxel: Voxel | null) => void;
+  /**
+   * Đặt (voxel) hoặc xóa (null) một loạt ô, gộp thành 1 undo.
+   * `keep`: bỏ qua ô không thoả — chỗ gọi dùng để không xoá khối đang bị ẩn.
+   */
+  fill: (cells: Cell[], voxel: Voxel | null, keep?: CellFilter) => void;
   /** Sơn lại màu các ô ĐÃ CÓ khối trong danh sách (không thêm/xóa). */
-  paint: (cells: Cell[], color: string) => void;
+  paint: (cells: Cell[], color: string, keep?: CellFilter) => void;
   /** Như paint nhưng KHÔNG áp đối xứng — dùng cho tô màu theo tầng. */
   recolorCells: (cells: Cell[], color: string) => void;
   /** Xóa các ô (không mirror), gộp 1 undo — dùng cho tô màu theo tầng. */
@@ -156,6 +227,19 @@ interface EditorState {
   moveCells: (cells: Cell[], dx: number, dy: number, dz: number) => void;
   /** Dán một cụm voxel (toạ độ tương đối) vào gốc `at`, gộp 1 undo. */
   pasteVoxels: (items: RelVoxel[], at: Cell) => void;
+  /**
+   * Ghi thẳng trạng thái cuối của một loạt ô, gộp 1 undo: `color` = màu mới, `null` = xoá.
+   *
+   * Có sẵn `fill`/`paint`/`deleteCells` rồi, nhưng mỗi cái là một batch undo riêng — mà dán cả một
+   * tầng thì vừa phải sơn ô có khối, vừa thêm ô trống, vừa xoá ô dư, cả ba trong ĐÚNG MỘT lần undo.
+   * Không áp đối xứng và không tự lọc theo hiển thị: chỗ gọi tự lo.
+   */
+  applyCells: (items: { x: number; y: number; z: number; color: string | null }[]) => void;
+  /**
+   * Chia mỗi khối thành n×n×n khối con — hình y nguyên, số khối ×n³. Gộp 1 undo (kể cả phần
+   * chỉnh kèm ở `SubdivideOptions`). Trả về số khối sau khi chia, 0 = không làm gì.
+   */
+  subdivide: (n: number, options?: SubdivideOptions) => number;
   undo: () => void;
   redo: () => void;
   clear: () => void;
@@ -177,8 +261,8 @@ function applyChange(grid: VoxelGrid, ch: Change, voxel: Voxel | undefined) {
 function applyTargets(
   grid: VoxelGrid,
   targets: { x: number; y: number; z: number; after?: Voxel }[],
-): Batch {
-  const changes: Batch = [];
+): Change[] {
+  const changes: Change[] = [];
   for (const t of targets) {
     const before = grid.get(t.x, t.y, t.z);
     if (!before && !t.after) continue;
@@ -224,6 +308,11 @@ export const useEditor = create<EditorState>((set, get) => ({
   recenter: true,
   centerOverride: null,
   showCenter: true,
+  showWrappers: true,
+  toggleShowWrappers: () => set((s) => ({ showWrappers: !s.showWrappers })),
+  focusedWrapper: null,
+  setFocusedWrapper: (focusedWrapper) =>
+    set((s) => (s.focusedWrapper === focusedWrapper ? s : { focusedWrapper })),
   setLevelMeta: (levelMeta) => set({ levelMeta }),
   setDepthOverrides: (depthOverrides) => set({ depthOverrides }),
   setRecenter: (recenter) => set({ recenter }),
@@ -232,6 +321,46 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   blasters: [],
   dockColumns: [],
+  wrappers: [],
+
+  addWrapper: (kind, min, max, hp = DEFAULT_WRAPPER_HP) => {
+    const id = nextWrapperId(get().wrappers);
+    set((s) => ({
+      wrappers: [
+        ...s.wrappers,
+        {
+          id,
+          kind,
+          // Chuẩn hoá hai đầu: chỗ gọi truyền hộp vùng chọn, mà hộp đó có thể ngược đầu.
+          min: {
+            x: Math.min(min.x, max.x),
+            y: Math.min(min.y, max.y),
+            z: Math.min(min.z, max.z),
+          },
+          max: {
+            x: Math.max(min.x, max.x),
+            y: Math.max(min.y, max.y),
+            z: Math.max(min.z, max.z),
+          },
+          hp: Math.max(1, Math.floor(hp)),
+        },
+      ],
+    }));
+    return id;
+  },
+
+  updateWrapper: (id, patch) =>
+    set((s) => ({
+      wrappers: s.wrappers.map((w) => (w.id === id ? { ...w, ...patch, id: w.id } : w)),
+    })),
+
+  removeWrapper: (id) =>
+    set((s) => ({
+      wrappers: s.wrappers.filter((w) => w.id !== id),
+      focusedWrapper: s.focusedWrapper === id ? null : s.focusedWrapper,
+    })),
+
+  clearWrappers: () => set({ wrappers: [], focusedWrapper: null }),
 
   setDockRowCount: (n) =>
     set((s) => {
@@ -362,10 +491,11 @@ export const useEditor = create<EditorState>((set, get) => ({
   toggleMirror: (axis) =>
     set((s) => (axis === 'x' ? { mirrorX: !s.mirrorX } : { mirrorY: !s.mirrorY })),
 
-  fill: (cells, voxel) => {
+  fill: (cells, voxel, keep) => {
     const { grid, undoStack, mirrorX, mirrorY } = get();
-    const changes: Batch = [];
+    const changes: Change[] = [];
     for (const [x, y, z] of expandMirror(cells, mirrorX, mirrorY)) {
+      if (keep && !keep(x, y, z)) continue;
       const before = grid.get(x, y, z);
       const after = voxel ? { ...voxel } : undefined;
       // Bỏ qua no-op.
@@ -379,15 +509,16 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (!changes.length) return;
     set({
       version: get().version + 1,
-      undoStack: [...undoStack, changes],
+      undoStack: [...undoStack, { cells: changes }],
       redoStack: [],
     });
   },
 
-  paint: (cells, color) => {
+  paint: (cells, color, keep) => {
     const { grid, undoStack, mirrorX, mirrorY } = get();
-    const changes: Batch = [];
+    const changes: Change[] = [];
     for (const [x, y, z] of expandMirror(cells, mirrorX, mirrorY)) {
+      if (keep && !keep(x, y, z)) continue;
       const before = grid.get(x, y, z);
       if (!before || before.color === color) continue;
       const after: Voxel = { ...before, color };
@@ -397,14 +528,14 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (!changes.length) return;
     set({
       version: get().version + 1,
-      undoStack: [...undoStack, changes],
+      undoStack: [...undoStack, { cells: changes }],
       redoStack: [],
     });
   },
 
   recolorCells: (cells, color) => {
     const { grid, undoStack } = get();
-    const changes: Batch = [];
+    const changes: Change[] = [];
     for (const [x, y, z] of cells) {
       const before = grid.get(x, y, z);
       if (!before || before.color === color) continue;
@@ -413,12 +544,12 @@ export const useEditor = create<EditorState>((set, get) => ({
       changes.push({ x, y, z, before, after });
     }
     if (!changes.length) return;
-    set({ version: get().version + 1, undoStack: [...undoStack, changes], redoStack: [] });
+    set({ version: get().version + 1, undoStack: [...undoStack, { cells: changes }], redoStack: [] });
   },
 
   deleteCells: (cells) => {
     const { grid, undoStack } = get();
-    const changes: Batch = [];
+    const changes: Change[] = [];
     for (const [x, y, z] of cells) {
       const before = grid.get(x, y, z);
       if (!before) continue;
@@ -426,7 +557,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       changes.push({ x, y, z, before, after: undefined });
     }
     if (!changes.length) return;
-    set({ version: get().version + 1, undoStack: [...undoStack, changes], redoStack: [] });
+    set({ version: get().version + 1, undoStack: [...undoStack, { cells: changes }], redoStack: [] });
   },
 
   place: (x, y, z) => get().fill([[x, y, z]], { color: get().color }),
@@ -434,7 +565,7 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   stampVoxels: (items) => {
     const { grid, undoStack } = get();
-    const changes: Batch = [];
+    const changes: Change[] = [];
     for (const { x, y, z, color } of items) {
       const before = grid.get(x, y, z);
       if (before && before.color === color) continue;
@@ -445,7 +576,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (!changes.length) return;
     set({
       version: get().version + 1,
-      undoStack: [...undoStack, changes],
+      undoStack: [...undoStack, { cells: changes }],
       redoStack: [],
     });
   },
@@ -470,7 +601,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     }
     const changes = applyTargets(grid, [...targets.values()]);
     if (!changes.length) return;
-    set({ version: get().version + 1, undoStack: [...undoStack, changes], redoStack: [] });
+    set({ version: get().version + 1, undoStack: [...undoStack, { cells: changes }], redoStack: [] });
   },
 
   pasteVoxels: (items, [ax, ay, az]) => {
@@ -485,18 +616,99 @@ export const useEditor = create<EditorState>((set, get) => ({
       })),
     );
     if (!changes.length) return;
-    set({ version: get().version + 1, undoStack: [...undoStack, changes], redoStack: [] });
+    set({ version: get().version + 1, undoStack: [...undoStack, { cells: changes }], redoStack: [] });
+  },
+
+  applyCells: (items) => {
+    const { grid, undoStack } = get();
+    const changes = applyTargets(
+      grid,
+      items.map(({ x, y, z, color }) => ({ x, y, z, after: color ? { color } : undefined })),
+    );
+    if (!changes.length) return;
+    set({ version: get().version + 1, undoStack: [...undoStack, { cells: changes }], redoStack: [] });
+  },
+
+  subdivide: (n, options) => {
+    const factor = Math.floor(n);
+    const state = get();
+    const { grid } = state;
+    if (!Number.isFinite(factor) || factor < 2 || !grid.size) return 0;
+
+    const cube = factor ** 3;
+    const next = subdivideGrid(grid, factor);
+    // Ô cũ về trống trước, ô mới ghi đè lên sau — như `moveCells`: khối nằm ngay gốc toạ độ có ô
+    // cũ trùng ô con mới, tính theo thứ tự này thì nó được giữ chứ không bị chính mình xoá.
+    const targets = new Map<string, { x: number; y: number; z: number; after?: Voxel }>();
+    for (const { x, y, z } of grid.entries()) {
+      targets.set(VoxelGrid.key(x, y, z), { x, y, z, after: undefined });
+    }
+    for (const { x, y, z, voxel } of next.entries()) {
+      targets.set(VoxelGrid.key(x, y, z), { x, y, z, after: voxel });
+    }
+    const cells = applyTargets(grid, [...targets.values()]);
+    if (!cells.length) return grid.size;
+
+    const before: SideState = {
+      blasters: state.blasters,
+      dockColumns: state.dockColumns,
+      levelMeta: state.levelMeta,
+      depthOverrides: state.depthOverrides,
+      centerOverride: state.centerOverride,
+      wrappers: state.wrappers,
+    };
+    const center = state.centerOverride;
+    const after: SideState = {
+      blasters:
+        (options?.scaleBullets ?? true)
+          ? state.blasters.map((b) => ({ ...b, bulletCount: b.bulletCount * cube }))
+          : state.blasters,
+      dockColumns: state.dockColumns,
+      levelMeta:
+        (options?.scaleObjectScale ?? true)
+          ? {
+              ...state.levelMeta,
+              voxelizedObjectScale: state.levelMeta.voxelizedObjectScale / factor,
+            }
+          : state.levelMeta,
+      // depth tính lại từ đầu sau khi chia (vỏ ngoài giờ dày n lớp), nên khoá "depth|màu" cũ trỏ
+      // sang layer khác hẳn — giữ lại là ép nhầm depth cho một layer không liên quan.
+      depthOverrides: {},
+      // Tâm cũng đo bằng ô lưới: giữ nguyên là khối lệch đi so với chỗ nó vốn đứng lúc xuất.
+      centerOverride: center
+        ? { x: center.x * factor, y: center.y * factor, z: center.z * factor }
+        : null,
+      // Hộp bọc cũng đo bằng ô lưới: ô [m..M] nay thành [m*n .. M*n+n-1], tức vẫn bọc đúng chỗ cũ.
+      wrappers: state.wrappers.map((w) => ({
+        ...w,
+        min: { x: w.min.x * factor, y: w.min.y * factor, z: w.min.z * factor },
+        max: {
+          x: w.max.x * factor + factor - 1,
+          y: w.max.y * factor + factor - 1,
+          z: w.max.z * factor + factor - 1,
+        },
+      })),
+    };
+
+    set({
+      version: state.version + 1,
+      undoStack: [...state.undoStack, { cells, side: { before, after } }],
+      redoStack: [],
+      ...after,
+    });
+    return grid.size;
   },
 
   undo: () => {
     const { grid, undoStack, redoStack } = get();
     const batch = undoStack[undoStack.length - 1];
     if (!batch) return;
-    for (const ch of batch) applyChange(grid, ch, ch.before);
+    for (const ch of batch.cells) applyChange(grid, ch, ch.before);
     set({
       version: get().version + 1,
       undoStack: undoStack.slice(0, -1),
       redoStack: [...redoStack, batch],
+      ...(batch.side ? batch.side.before : null),
     });
   },
 
@@ -504,11 +716,12 @@ export const useEditor = create<EditorState>((set, get) => ({
     const { grid, undoStack, redoStack } = get();
     const batch = redoStack[redoStack.length - 1];
     if (!batch) return;
-    for (const ch of batch) applyChange(grid, ch, ch.after);
+    for (const ch of batch.cells) applyChange(grid, ch, ch.after);
     set({
       version: get().version + 1,
       undoStack: [...undoStack, batch],
       redoStack: redoStack.slice(0, -1),
+      ...(batch.side ? batch.side.after : null),
     });
   },
 
@@ -524,6 +737,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       centerOverride: null,
       blasters: [],
       dockColumns: [],
+      wrappers: [],
     });
   },
 
@@ -566,6 +780,13 @@ export const useEditor = create<EditorState>((set, get) => ({
       centerOverride,
       blasters: parsed.shooters.blasters,
       dockColumns: parsed.shooters.dockColumns,
+      // Hộp bọc đọc từ file đã ở toạ độ editor, nhưng khối thì vừa bị nâng lên cho chạm sàn (dz) —
+      // phải nâng hộp theo, không thì lớp bọc lệch khỏi cụm nó bọc.
+      wrappers: parsed.wrappers.map((w) => ({
+        ...w,
+        min: { ...w.min, z: w.min.z + (centerOverride?.z ?? 0) },
+        max: { ...w.max, z: w.max.z + (centerOverride?.z ?? 0) },
+      })),
       version: get().version + 1,
       undoStack: [],
       redoStack: [],
@@ -604,6 +825,8 @@ try {
       recenter: parsed.recenter ?? true,
       centerOverride: parsed.centerOverride ?? null,
       showCenter: parsed.showCenter ?? true,
+      showWrappers: parsed.showWrappers ?? true,
+      wrappers: parsed.wrappers ?? [],
     });
     // Bản trước lưu súng ở key này. Chỉ nhận khi bản ghi level ở trên chưa có súng nào, để không
     // xoá mất thứ vừa đọc được.
@@ -655,7 +878,9 @@ useEditor.subscribe((s, prev) => {
     s.depthOverrides === prev.depthOverrides &&
     s.recenter === prev.recenter &&
     s.centerOverride === prev.centerOverride &&
-    s.showCenter === prev.showCenter
+    s.showCenter === prev.showCenter &&
+    s.showWrappers === prev.showWrappers &&
+    s.wrappers === prev.wrappers
   ) {
     return;
   }
@@ -669,6 +894,10 @@ useEditor.subscribe((s, prev) => {
         recenter: s.recenter,
         centerOverride: s.centerOverride,
         showCenter: s.showCenter,
+        showWrappers: s.showWrappers,
+        // Lớp bọc lưu cùng META (không phải cùng grid): nó là dữ liệu cấp level như levelMeta, và
+        // đổi theo thao tác riêng chứ không theo `version` của grid.
+        wrappers: s.wrappers,
       }),
     );
   } catch {

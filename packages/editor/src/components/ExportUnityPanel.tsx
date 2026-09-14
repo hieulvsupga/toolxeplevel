@@ -6,9 +6,12 @@ import {
   WALL_COLOR_ID,
   blockCountsByColorFromLayers,
   buildLayers,
+  buildWrapperEntries,
   gameColorById,
+  toFileSpaceLayers,
   toUnityAsset,
   validateShooters,
+  validateWrappers,
   type LevelMeta,
   type Vec3,
 } from '@voxel/core';
@@ -64,6 +67,7 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
   const centerOverride = useEditor((s) => s.centerOverride);
   const blasters = useEditor((s) => s.blasters);
   const dockColumns = useEditor((s) => s.dockColumns);
+  const wrappers = useEditor((s) => s.wrappers);
 
   const built = useMemo(
     () => buildLayers(grid, { recenter, centerOverride }),
@@ -87,6 +91,12 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
   }, [built.layers, depthOverrides]);
 
   const layers = useMemo(() => rows.map((r) => r.layer), [rows]);
+  /**
+   * Layer ở TOẠ ĐỘ FILE cho khung xem trước: khung đó mô phỏng cách game vẽ, nên phải nhận đúng
+   * con số sẽ nằm trong file (đã lật chiều sâu — xem `toFileSpaceLayers`). Đưa toạ độ editor vào là
+   * khung hiện ảnh gương của thứ game thật sự vẽ.
+   */
+  const fileLayers = useMemo(() => toFileSpaceLayers(layers), [layers]);
 
   const set = <K extends keyof LevelMeta>(key: K, value: LevelMeta[K]) =>
     setMeta({ ...meta, [key]: value });
@@ -104,10 +114,24 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
     [blasters, dockColumns, layers, meta.dockCount],
   );
 
+  /** Lớp bọc + phần soát của chúng. `innerVoxelPositions`/`hpTexts` tính từ grid ngay tại đây. */
+  const wrapperEntries = useMemo(
+    // Cùng `recenter`/`centerOverride` với `built` ở trên — xem `buildWrapperEntries`.
+    () => buildWrapperEntries(grid, wrappers, { recenter, centerOverride }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [grid, version, wrappers, recenter, centerOverride],
+  );
+  const wrapperProblems = useMemo(
+    () => validateWrappers(grid, wrappers),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [grid, version, wrappers],
+  );
+
   const handleExport = () => {
-    const blob = new Blob([toUnityAsset(layers, meta, { blasters, dockColumns })], {
-      type: 'text/yaml',
-    });
+    const blob = new Blob(
+      [toUnityAsset(layers, meta, { blasters, dockColumns }, wrapperEntries)],
+      { type: 'text/yaml' },
+    );
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -163,6 +187,17 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
               </ul>
             </div>
           )
+        )}
+
+        {wrapperProblems.length > 0 && (
+          <div className="ex-warn">
+            Phần lớp bọc còn {wrapperProblems.length} chỗ chưa ổn (sửa ở danh sách 🧊 góc dưới-trái):
+            <ul>
+              {wrapperProblems.map((p) => (
+                <li key={p}>{p}</li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {built.approximatedColors.length > 0 && (
@@ -316,7 +351,7 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
         <div className="ex-preview">
           <div className="ex-section">Hướng khối trong game</div>
           <RootRotationPreview
-            layers={layers}
+            layers={fileLayers}
             euler={meta.rootLocalEulerAngles}
             onChange={(v) => set('rootLocalEulerAngles', v)}
           />

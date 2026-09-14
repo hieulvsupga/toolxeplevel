@@ -8,7 +8,9 @@
   "scripts": {
     "dev": "npm run dev -w @voxel/editor",
     "build": "npm run build -w @voxel/editor",
-    "preview": "npm run preview -w @voxel/editor"
+    "preview": "npm run preview -w @voxel/editor",
+    "convert:tapaway": "esbuild scripts/convert-tapaway.ts --bundle --platform=node --format=cjs --outfile=scripts/.convert-tapaway.cjs --log-level=warning && node scripts/.convert-tapaway.cjs",
+    "report:levels": "esbuild scripts/level-report.ts --bundle --platform=node --format=cjs --outfile=scripts/.level-report.cjs --log-level=warning && node scripts/.level-report.cjs"
   },
   "dependencies": {
     "voxel-level-tool": "file:"

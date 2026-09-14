@@ -23,7 +23,12 @@ interface BlasterPanelProps {
   onClose: () => void;
 }
 
-/** Màu chọn được cho súng: cả bảng màu game trừ ô tường (tường không bao giờ là mục tiêu). */
+/**
+ * Cả bảng màu game trừ ô tường (tường không bao giờ là mục tiêu nên không súng nào bắn nó).
+ *
+ * Đây chỉ là NGUỒN để lọc, không phải thứ bày ra: các ô chọn màu của súng chỉ hiện màu đang có
+ * khối trên hình — xem `gridColors` trong panel.
+ */
 const SHOOTABLE_COLORS = GAME_COLORS.filter((c) => c.id !== WALL_COLOR_ID);
 
 const DIFFICULTY_NAMES = ['Normal', 'Hard', 'VeryHard'];
@@ -84,6 +89,11 @@ interface LinkLine {
  * Bảng xếp blaster, neo ở góc trên bên phải scene (không phải popup — để vừa xếp súng vừa xoay
  * khối mà nhìn được cả hai).
  *
+ * Thân bảng chia HAI KHUNG cạnh nhau, mỗi khung tự cuộn: bên trái là lưới hàng chờ, bên phải là
+ * cân đối đạn / thử giải / mechanic / tạo nhanh / sửa khẩu đang chọn. Xếp dọc một cột như trước thì
+ * lưới bị đẩy xuống giữa, mà lưới lại là thứ phải nhìn liên tục — sửa một khẩu là phải cuộn ngược
+ * lên tìm lại nó.
+ *
  * Mỗi hàng chờ vẽ thành một CỘT DỌC, xếp cạnh nhau từ trái sang — đúng như lúc chơi, và đúng tên
  * của trường trong data (`dockColumns`). Ô trên cùng là phần tử đầu của hàng.
  *
@@ -105,6 +115,7 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
   const toggleBlasterConnection = useEditor((s) => s.toggleBlasterConnection);
   const levelMeta = useEditor((s) => s.levelMeta);
   const setLevelMeta = useEditor((s) => s.setLevelMeta);
+  const wrapperCount = useEditor((s) => s.wrappers.length);
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [bulletsPerBlaster, setBulletsPerBlaster] = useState(40);
@@ -127,6 +138,8 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
   const [pendingLink, setPendingLink] = useState<number | null>(null);
   /** Số băng gán cho khẩu khi bấm bằng mechanic Ice. */
   const [iceAmount, setIceAmount] = useState(5);
+  /** Lưới ô màu 2 đang mở hay không (ô sửa khẩu). */
+  const [secondOpen, setSecondOpen] = useState(false);
   /** Màu 2 gán cho khẩu khi bấm bằng mechanic Double. */
   const [secondColor, setSecondColor] = useState(SHOOTABLE_COLORS[0]?.id ?? 1);
 
@@ -143,13 +156,51 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
 
   const balance = useMemo(() => colorBalance(blockCounts, blasters), [blockCounts, blasters]);
 
+  /**
+   * Màu bày ra ở các ô chọn màu của súng: chỉ những màu ĐANG CÓ khối trên hình (trừ tường).
+   *
+   * Bày cả 16 màu của game thì hầu hết là màu màn này không dùng, mà bấm nhầm một ô là ra khẩu súng
+   * bắn màu chẳng có khối nào — tổng đạn lệch nhưng nhìn dãy ô màu không thấy gì sai, phải mở bảng
+   * cân bằng mới lòi ra.
+   */
+  const gridColors = useMemo(
+    () => SHOOTABLE_COLORS.filter((c) => (blockCounts.get(c.id) ?? 0) > 0),
+    [blockCounts],
+  );
+
+  /**
+   * Như trên nhưng giữ thêm mấy màu đang được dùng dù hình không còn khối màu đó (level nhập từ
+   * .asset, hoặc vừa xoá hết khối màu ấy). Bỏ đi thì ô đang chọn biến mất khỏi lưới, nhìn như khẩu
+   * súng không có màu nào — và không bấm lại được vào chính màu nó đang mang.
+   */
+  const colorsWith = (...keep: number[]) => {
+    const ids = new Set(gridColors.map((c) => c.id));
+    for (const id of keep) if (id !== WALL_COLOR_ID) ids.add(id);
+    return SHOOTABLE_COLORS.filter((c) => ids.has(c.id));
+  };
+
+  /** Màu không còn khối nào — ô của nó phải nói rõ, không thì nhìn y hệt màu dùng được. */
+  const goneNote = (id: number) => ((blockCounts.get(id) ?? 0) > 0 ? '' : ' (hình không còn khối màu này)');
+
   const byId = useMemo(() => new Map(blasters.map((b) => [b.id, b])), [blasters]);
   const selected = selectedId === null ? undefined : byId.get(selectedId);
 
   useEffect(() => {
     setIdDraft(selected ? String(selected.id) : '');
     setIdError('');
+    // Đổi sang khẩu khác thì gập lưới màu lại, không thì nó mở lơ lửng cho một khẩu khác.
+    setSecondOpen(false);
   }, [selected?.id]);
+
+  // Hình đổi (xoá hết khối một màu, nhập level khác) mà màu 2 đang chọn không còn khối nào thì kéo
+  // nó về màu đầu tiên đang có. Chỉ chạy khi `gridColors` đổi, nên màu do người dùng tự bấm — kể cả
+  // màu không còn khối — vẫn được giữ nguyên.
+  useEffect(() => {
+    if (!gridColors.length) return;
+    if (gridColors.some((c) => c.id === secondColor)) return;
+    setSecondColor(gridColors[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridColors]);
 
   /** Các súng đang nối với súng đang chọn — để tô sáng cho thấy cặp. */
   const partnerIds = useMemo(
@@ -235,7 +286,10 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
   /** Màu đang thiếu đạn nhiều nhất — mặc định hợp lý cho súng vừa thêm. */
   const neediestColor = () => {
     const worst = [...balance].sort((a, b) => a.diff - b.diff)[0];
-    return worst && worst.diff < 0 ? worst.colorType : (SHOOTABLE_COLORS[0]?.id ?? 1);
+    if (worst && worst.diff < 0) return worst.colorType;
+    // Không màu nào thiếu đạn -> lấy màu đầu tiên ĐANG CÓ trên hình, để khẩu vừa thêm không mang
+    // một màu chẳng có khối nào.
+    return gridColors[0]?.id ?? SHOOTABLE_COLORS[0]?.id ?? 1;
   };
 
   const handleAdd = (row: number) => {
@@ -430,520 +484,591 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
       </div>
 
       <div className="bl-dock-body">
-        <div className="bl-dock-sub">
-          {totalBullets} đạn / {shootableBlocks} khối bắn được
-          {blockCounts.get(WALL_COLOR_ID) ? ` · ${blockCounts.get(WALL_COLOR_ID)} khối tường` : ''}
-        </div>
-
-        {/* Cân đối đạn / khối theo màu — bảng quan trọng nhất, để ngay trên đầu. */}
-        {balance.length === 0 ? (
-          <div className="bl-note">Chưa có khối màu nào trong scene.</div>
-        ) : (
-          <div className="bl-balance">
-            {balance.map((row) => {
-              const color = gameColorById(row.colorType);
-              return (
-                <div
-                  className={`bl-bal-row${row.diff === 0 ? ' ok' : row.diff < 0 ? ' short' : ' over'}`}
-                  key={row.colorType}
-                  title={
-                    row.diff === 0
-                      ? 'Khớp'
-                      : row.diff < 0
-                        ? `Thiếu ${-row.diff} đạn`
-                        : `Thừa ${row.diff} đạn`
-                  }
-                >
-                  <span className="pal-swatch" style={{ background: color?.hex ?? '#000' }} />
-                  <span className="bl-bal-name">{color?.name ?? row.colorType}</span>
-                  <span className="bl-bal-num">{row.bullets}</span>
-                  <span className="bl-bal-sep">/</span>
-                  <span className="bl-bal-num">{row.blocks}</span>
-                  <span className="bl-bal-diff">
-                    {row.diff === 0 ? '✓' : row.diff > 0 ? `+${row.diff}` : row.diff}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Thử giải + chấm độ khó */}
-        <button
-          className="bl-check-go"
-          disabled={!shootableBlocks}
-          onClick={runCheck}
-          title="Chơi hộ một lượt để xem có phá hết khối được không, rồi chấm độ khó 0–10"
-        >
-          🎯 Thử giải &amp; chấm độ khó
-        </button>
-
-        {/* Thanh mechanic: bật một cơ chế lên rồi bấm thẳng vào các chip súng bên dưới. */}
-        <div className="bl-mech">
-          <span className="bl-mech-label">Mechanic</span>
-          {MECHANICS.map((m) => (
-            <button
-              key={m.id}
-              className={`bl-mech-btn${mechanic === m.id ? ' active' : ''}`}
-              // Bật/tắt mechanic thì bỏ luôn khẩu đang chờ. Xoá ở đây chứ không trong một effect
-              // theo `mechanic`: nút "+ nối" bên dưới bật mechanic KÈM một khẩu chờ sẵn, effect sẽ
-              // xoá mất khẩu đó ngay lần render sau.
-              onClick={() => {
-                setMechanic((cur) => (cur === m.id ? null : m.id));
-                setPendingLink(null);
-              }}
-              title={m.hint}
-            >
-              {m.label}
-            </button>
-          ))}
-          {mechanic && (
-            <button
-              className="bl-mech-off"
-              onClick={() => {
-                setMechanic(null);
-                setPendingLink(null);
-              }}
-              title="Tắt mechanic"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-        {mechanic && (
-          <div className="bl-note bl-linking-hint">
-            {mechanic === 'ice' && (
-              <label className="bl-ice-amount">
-                Băng
-                <input
-                  type="number"
-                  min={1}
-                  value={iceAmount}
-                  onChange={(e) => {
-                    const n = Number(e.target.value);
-                    if (Number.isFinite(n) && n >= 1) setIceAmount(Math.floor(n));
-                  }}
-                />
-              </label>
-            )}
-            {mechanic === 'double' && (
-              <span className="bl-ice-amount">
-                Màu 2
-                <span className="bl-mini-swatches">
-                  {SHOOTABLE_COLORS.map((c) => (
-                    <button
-                      key={c.id}
-                      className={`swatch${c.id === secondColor ? ' active' : ''}`}
-                      style={{ background: c.hex }}
-                      title={`${c.id} — ${c.name}`}
-                      onClick={() => setSecondColor(c.id)}
+        {/* Khung trái: chỉ lưới hàng chờ. Tách hẳn khỏi phần điều khiển vì đây là thứ phải
+            nhìn liên tục trong lúc xếp — để chung một cột dọc thì mỗi lần sửa một khẩu lại
+            phải cuộn ngược lên tìm nó. */}
+        <div className="bl-pane bl-pane-grid">
+          {/* Các hàng chờ: mỗi hàng là một cột dọc, ô trên cùng là đầu hàng. */}
+          {rowCount === 0 ? (
+            <div className="bl-note">Chưa có hàng nào — đặt “Hàng” ở trên rồi bấm “+”.</div>
+          ) : (
+            <div className="bl-cols">
+              <div className="bl-cols-inner" ref={linksBoxRef}>
+                {/* Đoạn nối vẽ dưới các chip (SVG đứng trước nên chip che lên), nên trông như dây
+                    chạy từ mép khẩu này sang mép khẩu kia. */}
+                <svg className="bl-link-lines">
+                  {linkLines.map((l) => (
+                    <line
+                      key={l.key}
+                      x1={l.x1}
+                      y1={l.y1}
+                      x2={l.x2}
+                      y2={l.y2}
+                      className={l.hot ? 'hot' : undefined}
                     />
                   ))}
-                </span>
-              </span>
-            )}
-            {mechanic === 'connected' && pendingLink !== null
-              ? `Đã chọn ${pendingLink} — bấm khẩu thứ hai để nối (bấm lại ${pendingLink} để huỷ).`
-              : MECHANICS.find((m) => m.id === mechanic)?.hint}
-          </div>
-        )}
-
-        {check && (
-          <div className={`bl-check${check.result.winnable ? ' ok' : ' bad'}`}>
-            <div className="bl-check-head">
-              <b>{check.result.winnable ? '✓ Win được' : '✗ Không win được'}</b>
-              {check.result.winnable && (
-                <span>
-                  {check.result.picks} lần bấm · {check.result.totalBlocks} khối
-                </span>
-              )}
-              <button
-                className="bl-check-close"
-                onClick={() => setCheck(null)}
-                title="Đóng kết quả (bấm Thử giải để chạy lại)"
-              >
-                ✕
-              </button>
-            </div>
-
-            {!check.result.winnable && <div className="bl-check-why">{check.result.reason}</div>}
-
-            {check.result.winnable && (
-              <>
-                <div className="bl-score">
-                  <span className="bl-score-num">{check.rating.score.toFixed(1)}</span>
-                  <span className="bl-score-of">/10</span>
-                  <span className="bl-score-label">{check.rating.label}</span>
-                  <span className="bl-score-enum">
-                    → difficulty {check.rating.suggestedDifficulty} (
-                    {DIFFICULTY_NAMES[check.rating.suggestedDifficulty]})
-                  </span>
-                </div>
-                <div
-                  className={`bl-score-bar${
-                    check.rating.score < 4 ? '' : check.rating.score < 7 ? ' mid' : ' hi'
-                  }`}
-                >
-                  <i style={{ width: `${check.rating.score * 10}%` }} />
-                </div>
-
-                {/* Từng yếu tố: hiện cả thanh để thấy ngay cái nào đang đẩy điểm lên. Số liệu thật
-                    nằm ở tooltip cho đỡ chật. */}
-                <div className="bl-factors">
-                  {check.rating.factors.map((f) => (
-                    <div className="bl-factor" key={f.key} title={`${f.detail} (×${f.weight})`}>
-                      <span className="bl-factor-name">{f.label}</span>
-                      <span className="bl-factor-bar">
-                        <i style={{ width: `${f.value * 100}%` }} />
+                </svg>
+                {dockColumns.map((column, row) => {
+                const bullets = column.reduce((s, id) => s + (byId.get(id)?.bulletCount ?? 0), 0);
+                return (
+                  <div className="bl-col" key={row}>
+                    {/* Số súng/đạn để trên đầu cột: các cột dài ngắn khác nhau nên đặt ở dưới thì
+                        những con số này nằm lệch nhau, không so bằng mắt được. */}
+                    <div className="bl-col-head" title={`Hàng ${row + 1}`}>
+                      <span>H{row + 1}</span>
+                      <span className="bl-col-meta" title={`${column.length} súng · ${bullets} đạn`}>
+                        {column.length} · {bullets}
                       </span>
                     </div>
-                  ))}
-                </div>
-
-                {check.rating.suggestedDifficulty !== levelMeta.difficulty && (
-                  <button
-                    className="bl-apply-diff"
-                    onClick={() =>
-                      setLevelMeta({
-                        ...levelMeta,
-                        difficulty: check.rating.suggestedDifficulty,
-                      })
-                    }
-                  >
-                    Đặt difficulty = {check.rating.suggestedDifficulty} (
-                    {DIFFICULTY_NAMES[check.rating.suggestedDifficulty]}), đang là{' '}
-                    {levelMeta.difficulty}
-                  </button>
-                )}
-              </>
-            )}
-
-            {/* Giấu màu không đổi được kết quả giải, nhưng người chơi thật thì mò chứ không nhìn
-                thấy như mô phỏng — phải nói rõ kẻo con số bị đọc thành "màn này dễ". */}
-            {check.result.hiddenCount > 0 && (
-              <div className="bl-check-approx">
-                {check.result.hiddenCount} khẩu giấu màu — lời giải này chơi với thông tin đầy đủ,
-                nên đây là giới hạn trên; người chơi không nhìn trước được màu.
+                    <div className="bl-col-chips">
+                      {column.map((id) => chip(id))}
+                      <button
+                        className="bl-add"
+                        onClick={() => handleAdd(row)}
+                        title={`Thêm súng vào hàng ${row + 1}`}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                );
+                })}
               </div>
-            )}
+            </div>
+          )}
 
-            {check.result.ignoredMechanics.length > 0 && (
-              <div className="bl-check-approx">
-                Chỉ là gần đúng — mô phỏng chưa xử: {check.result.ignoredMechanics.join('; ')}.
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tạo nhanh */}
-        <div className="bl-quick">
-          <label className="bl-quick-field">
-            <span>Hàng</span>
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={rowCount}
-              // Bỏ qua giá trị không dùng được thay vì kẹp về 1: xoá trắng ô để gõ lại (raw = '')
-              // mà kẹp về 1 hàng là dồn hết súng của mọi hàng vào một chỗ giữa lúc đang gõ.
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                if (e.target.value.trim() && Number.isFinite(n) && n >= 1) setDockRowCount(n);
-              }}
-            />
-          </label>
-          <label className="bl-quick-field">
-            <span>Đạn/súng</span>
-            <input
-              type="number"
-              min={1}
-              value={bulletsPerBlaster}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                if (Number.isFinite(n) && n >= 1) setBulletsPerBlaster(Math.floor(n));
-              }}
-            />
-          </label>
-          <button
-            className="bl-auto"
-            disabled={!shootableBlocks}
-            onClick={() => setAutoOpen(true)}
-            title="Mở bảng tạo nhanh: chọn độ khó, cơ chế và số lượng từng cơ chế"
-          >
-            ⚡ Tạo theo màu khối…
-          </button>
-          <button
-            className="bl-icon-btn bl-danger"
-            disabled={!blasters.length}
-            onClick={() => confirm('Xoá toàn bộ súng?') && (clearShooters(), setSelectedId(null))}
-            title="Xoá toàn bộ súng"
-          >
-            🗑
-          </button>
+          {orphans.length > 0 && (
+            <div className="bl-orphans">
+              <div className="bl-orphans-head">Chưa xếp hàng ({orphans.length})</div>
+              <div className="bl-orphans-chips">{orphans.map((b) => chip(b.id, true))}</div>
+            </div>
+          )}
         </div>
 
-        {autoSummary && (
-          <div className="bl-note">
-            {autoSummary.text}
-            {autoSummary.notes.map((n) => (
-              <div className="bl-note-warn" key={n}>
-                {n}
-              </div>
-            ))}
+        {/* Khung phải: cân đối đạn, thử giải, mechanic, tạo nhanh, sửa khẩu đang chọn. */}
+        <div className="bl-pane bl-pane-side">
+          <div className="bl-dock-sub">
+            {totalBullets} đạn / {shootableBlocks} khối bắn được
+            {blockCounts.get(WALL_COLOR_ID) ? ` · ${blockCounts.get(WALL_COLOR_ID)} khối tường` : ''}
           </div>
-        )}
 
-        {/* Các hàng chờ: mỗi hàng là một cột dọc, ô trên cùng là đầu hàng. */}
-        {rowCount === 0 ? (
-          <div className="bl-note">Chưa có hàng nào — đặt “Hàng” ở trên rồi bấm “+”.</div>
-        ) : (
-          <div className="bl-cols">
-            <div className="bl-cols-inner" ref={linksBoxRef}>
-              {/* Đoạn nối vẽ dưới các chip (SVG đứng trước nên chip che lên), nên trông như dây
-                  chạy từ mép khẩu này sang mép khẩu kia. */}
-              <svg className="bl-link-lines">
-                {linkLines.map((l) => (
-                  <line
-                    key={l.key}
-                    x1={l.x1}
-                    y1={l.y1}
-                    x2={l.x2}
-                    y2={l.y2}
-                    className={l.hot ? 'hot' : undefined}
-                  />
-                ))}
-              </svg>
-              {dockColumns.map((column, row) => {
-              const bullets = column.reduce((s, id) => s + (byId.get(id)?.bulletCount ?? 0), 0);
-              return (
-                <div className="bl-col" key={row}>
-                  {/* Số súng/đạn để trên đầu cột: các cột dài ngắn khác nhau nên đặt ở dưới thì
-                      những con số này nằm lệch nhau, không so bằng mắt được. */}
-                  <div className="bl-col-head" title={`Hàng ${row + 1}`}>
-                    <span>H{row + 1}</span>
-                    <span className="bl-col-meta" title={`${column.length} súng · ${bullets} đạn`}>
-                      {column.length} · {bullets}
+          {/* Cân đối đạn / khối theo màu — bảng quan trọng nhất, để ngay trên đầu. */}
+          {balance.length === 0 ? (
+            <div className="bl-note">Chưa có khối màu nào trong scene.</div>
+          ) : (
+            <div className="bl-balance">
+              {balance.map((row) => {
+                const color = gameColorById(row.colorType);
+                return (
+                  <div
+                    className={`bl-bal-row${row.diff === 0 ? ' ok' : row.diff < 0 ? ' short' : ' over'}`}
+                    key={row.colorType}
+                    title={
+                      row.diff === 0
+                        ? 'Khớp'
+                        : row.diff < 0
+                          ? `Thiếu ${-row.diff} đạn`
+                          : `Thừa ${row.diff} đạn`
+                    }
+                  >
+                    <span className="pal-swatch" style={{ background: color?.hex ?? '#000' }} />
+                    <span className="bl-bal-name">{color?.name ?? row.colorType}</span>
+                    <span className="bl-bal-num">{row.bullets}</span>
+                    <span className="bl-bal-sep">/</span>
+                    <span className="bl-bal-num">{row.blocks}</span>
+                    <span className="bl-bal-diff">
+                      {row.diff === 0 ? '✓' : row.diff > 0 ? `+${row.diff}` : row.diff}
                     </span>
                   </div>
-                  <div className="bl-col-chips">
-                    {column.map((id) => chip(id))}
-                    <button
-                      className="bl-add"
-                      onClick={() => handleAdd(row)}
-                      title={`Thêm súng vào hàng ${row + 1}`}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-              );
+                );
               })}
             </div>
-          </div>
-        )}
+          )}
 
-        {orphans.length > 0 && (
-          <div className="bl-orphans">
-            <div className="bl-orphans-head">Chưa xếp hàng ({orphans.length})</div>
-            <div className="bl-orphans-chips">{orphans.map((b) => chip(b.id, true))}</div>
-          </div>
-        )}
+          {/* Thử giải + chấm độ khó */}
+          <button
+            className="bl-check-go"
+            disabled={!shootableBlocks}
+            onClick={runCheck}
+            title="Chơi hộ một lượt để xem có phá hết khối được không, rồi chấm độ khó 0–10"
+          >
+            🎯 Thử giải &amp; chấm độ khó
+          </button>
 
-        {/* Sửa 1 súng */}
-        {!selected ? (
-          <div className="bl-note">Bấm một súng ở trên để sửa, hoặc “+” để thêm mới.</div>
-        ) : (
-          <div className="bl-edit">
-            <div className="bl-edit-grid">
-              <label>
-                <span>id</span>
-                <input
-                  type="number"
-                  className={idError ? 'bl-bad' : ''}
-                  value={idDraft}
-                  onChange={(e) => applyId(e.target.value)}
-                />
-              </label>
-              <label>
-                <span>Đạn</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={selected.bulletCount}
-                  onChange={(e) =>
-                    updateBlaster(selected.id, { bulletCount: Math.max(0, Number(e.target.value)) })
-                  }
-                />
-              </label>
-            </div>
-            {idError && <div className="bl-err">{idError}</div>}
-
-            <div className="bl-swatches">
-              {SHOOTABLE_COLORS.map((c) => (
-                <button
-                  key={c.id}
-                  className={`swatch${c.id === selected.color ? ' active' : ''}`}
-                  style={{ background: c.hex }}
-                  title={`Màu 1 (bắn trước): ${c.id} — ${c.name}`}
-                  onClick={() => updateBlaster(selected.id, { color: c.id })}
-                />
-              ))}
-            </div>
-
-            {/* Màu 2 của súng Double. Để ngay dưới màu 1 nên đọc được thứ tự bắn từ trên xuống. */}
-            <div className="bl-swatches bl-swatches-2">
+          {/* Thanh mechanic: bật một cơ chế lên rồi bấm thẳng vào các chip súng bên dưới. */}
+          <div className="bl-mech">
+            <span className="bl-mech-label">Mechanic</span>
+            {MECHANICS.map((m) => (
               <button
-                className={`bl-second-off${selected.secondaryColor === WALL_COLOR_ID ? ' active' : ''}`}
-                title="Không dùng màu 2 (súng một màu)"
-                onClick={() => updateBlaster(selected.id, { secondaryColor: WALL_COLOR_ID })}
+                key={m.id}
+                className={`bl-mech-btn${mechanic === m.id ? ' active' : ''}`}
+                // Bật/tắt mechanic thì bỏ luôn khẩu đang chờ. Xoá ở đây chứ không trong một effect
+                // theo `mechanic`: nút "+ nối" bên dưới bật mechanic KÈM một khẩu chờ sẵn, effect sẽ
+                // xoá mất khẩu đó ngay lần render sau.
+                onClick={() => {
+                  setMechanic((cur) => (cur === m.id ? null : m.id));
+                  setPendingLink(null);
+                }}
+                title={m.hint}
+              >
+                {m.label}
+              </button>
+            ))}
+            {mechanic && (
+              <button
+                className="bl-mech-off"
+                onClick={() => {
+                  setMechanic(null);
+                  setPendingLink(null);
+                }}
+                title="Tắt mechanic"
               >
                 ✕
               </button>
-              {SHOOTABLE_COLORS.map((c) => (
-                <button
-                  key={c.id}
-                  className={`swatch${c.id === selected.secondaryColor ? ' active' : ''}`}
-                  style={{ background: c.hex }}
-                  title={`Màu 2 (bắn sau khi hết màu 1): ${c.id} — ${c.name}`}
-                  onClick={() =>
-                    updateBlaster(selected.id, {
-                      secondaryColor: c.id === selected.color ? WALL_COLOR_ID : c.id,
-                    })
-                  }
-                />
-              ))}
-            </div>
-
-            <div className="bl-edit-grid">
-              <label>
-                <span>type</span>
-                <select
-                  value={selected.type}
-                  onChange={(e) => updateBlaster(selected.id, { type: Number(e.target.value) })}
-                >
-                  {BLASTER_TYPES.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.id} — {t.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>Hàng</span>
-                <select
-                  value={rowOf(selected.id)}
-                  onChange={(e) => moveBlaster(selected.id, Number(e.target.value), -1)}
-                >
-                  {rowOf(selected.id) < 0 && <option value={-1}>(chưa xếp)</option>}
-                  {dockColumns.map((_, i) => (
-                    <option key={i} value={i}>
-                      Hàng {i + 1}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>🧊 iceHp</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={selected.iceHp}
-                  onChange={(e) =>
-                    updateBlaster(selected.id, { iceHp: Math.max(0, Number(e.target.value)) })
-                  }
-                />
-              </label>
-              <label className="bl-edit-check">
-                <input
-                  type="checkbox"
-                  checked={selected.isHidden}
-                  onChange={(e) => updateBlaster(selected.id, { isHidden: e.target.checked })}
-                />
-                ❓ isHidden
-              </label>
-            </div>
-
-            {/* Cơ chế Connected: nối 2 súng, quan hệ luôn hai chiều. */}
-            <div className="bl-links">
-              <span className="bl-links-head">🔗 Nối với</span>
-              {selected.connectedBlasterIds.length === 0 && (
-                <span className="bl-links-none">chưa nối</span>
+            )}
+          </div>
+          {mechanic && (
+            <div className="bl-note bl-linking-hint">
+              {mechanic === 'ice' && (
+                <label className="bl-ice-amount">
+                  Băng
+                  <input
+                    type="number"
+                    min={1}
+                    value={iceAmount}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n) && n >= 1) setIceAmount(Math.floor(n));
+                    }}
+                  />
+                </label>
               )}
-              {selected.connectedBlasterIds.map((pid) => {
-                const partner = byId.get(pid);
-                const pos = dockPositionOf(dockColumns, pid);
-                return (
-                  <button
-                    className={`bl-link-chip${partner ? '' : ' bl-chip-missing'}`}
-                    key={pid}
-                    onClick={() => toggleBlasterConnection(selected.id, pid)}
-                    title={
-                      partner
-                        ? `Bỏ nối với ${pid}${pos ? ` (hàng ${pos[0] + 1}, bậc ${pos[1] + 1})` : ''}`
-                        : `id ${pid} không có súng nào — bấm để bỏ nối`
-                    }
-                  >
-                    {partner && (
-                      <span
-                        className="bl-chip-swatch"
-                        style={{ background: gameColorById(partner.color)?.hex ?? '#000' }}
+              {mechanic === 'double' && (
+                <span className="bl-ice-amount">
+                  Màu 2
+                  <span className="bl-mini-swatches">
+                    {colorsWith(secondColor).map((c) => (
+                      <button
+                        key={c.id}
+                        className={`swatch${c.id === secondColor ? ' active' : ''}${
+                          goneNote(c.id) ? ' gone' : ''
+                        }`}
+                        style={{ background: c.hex }}
+                        title={`${c.id} — ${c.name}${goneNote(c.id)}`}
+                        onClick={() => setSecondColor(c.id)}
                       />
-                    )}
-                    {pid} ✕
-                  </button>
-                );
-              })}
-              {/* Chỗ này chỉ để XEM và BỎ nối. Tạo nối thì đi qua thanh mechanic ở trên — hai lối
-                  cùng làm một việc chỉ khiến người dùng phải đoán nên dùng lối nào. */}
-              <button
-                className={`bl-add${mechanic === 'connected' ? ' active' : ''}`}
-                onClick={() => {
-                  setMechanic('connected');
-                  setPendingLink(selected.id);
-                }}
-                title="Bật mechanic Connected và chọn sẵn khẩu này, rồi bấm khẩu thứ hai"
-              >
-                + nối
-              </button>
+                    ))}
+                    {!gridColors.length && <span className="bl-no-color">hình chưa có khối màu nào</span>}
+                  </span>
+                </span>
+              )}
+              {mechanic === 'connected' && pendingLink !== null
+                ? `Đã chọn ${pendingLink} — bấm khẩu thứ hai để nối (bấm lại ${pendingLink} để huỷ).`
+                : MECHANICS.find((m) => m.id === mechanic)?.hint}
             </div>
+          )}
 
-            <div className="bl-edit-actions">
-              <button onClick={() => nudge(-1)} title="Lên một chỗ trong hàng">
-                ▲
-              </button>
-              <button onClick={() => nudge(1)} title="Xuống một chỗ trong hàng">
-                ▼
-              </button>
-              <span className="bl-spacer" />
-              <button
-                className="bl-danger"
-                onClick={() => {
-                  removeBlaster(selected.id);
-                  setSelectedId(null);
-                }}
-                title="Xoá súng này"
-              >
-                🗑 Xoá
-              </button>
-            </div>
+          {check && (
+            <div className={`bl-check${check.result.winnable ? ' ok' : ' bad'}`}>
+              <div className="bl-check-head">
+                <b>{check.result.winnable ? '✓ Win được' : '✗ Không win được'}</b>
+                {check.result.winnable && (
+                  <span>
+                    {check.result.picks} lần bấm · {check.result.totalBlocks} khối
+                  </span>
+                )}
+                <button
+                  className="bl-check-close"
+                  onClick={() => setCheck(null)}
+                  title="Đóng kết quả (bấm Thử giải để chạy lại)"
+                >
+                  ✕
+                </button>
+              </div>
 
-            {/* Key/Lock giờ đã được mô phỏng, chỉ còn các loại khác là chưa — đừng để dòng nhắc cũ
-                nói oan là tool không kiểm khoá/chìa. */}
-            {selected.type !== BLASTER_TYPE_NORMAL &&
-              selected.type !== BLASTER_TYPE_KEY &&
-              selected.type !== BLASTER_TYPE_LOCK && (
-                <div className="bl-note">
-                  Loại {BLASTER_TYPES.find((t) => t.id === selected.type)?.name} được ghi nguyên vào
-                  file, nhưng tool chưa kiểm luật riêng của nó (generator, búa…).
+              {!check.result.winnable && <div className="bl-check-why">{check.result.reason}</div>}
+
+              {/* Phép mô phỏng chưa biết luật lớp bọc (chưa phá vỏ thì chưa bắn được khối trong),
+                  nên nói thẳng ra thay vì để người dựng tin vào một điểm khó sai. */}
+              {wrapperCount > 0 && (
+                <div className="bl-check-why">
+                  Level có {wrapperCount} lớp bọc 🧊 — phép thử này CHƯA tính luật lớp bọc (coi như
+                  khối bên trong bắn được ngay), nên màn thật sẽ khó hơn con số ở đây.
                 </div>
               )}
-          </div>
-        )}
 
-        {/* Panel này không còn hộp lỗi / hộp lưu ý nào. Bảng "Đạn so với khối" ở trên vẫn tô đỏ màu
-            nào thiếu đạn, và nút Thử giải vẫn nói rõ vì sao không win được — hai chỗ đó đủ để thấy
-            vấn đề. `validateShooters()` / `connectionWarnings()` vẫn nằm trong core (bảng Xuất
-            .asset còn dùng), nên bật lại chỗ này lúc nào cũng được. */}
+              {check.result.winnable && (
+                <>
+                  <div className="bl-score">
+                    <span className="bl-score-num">{check.rating.score.toFixed(1)}</span>
+                    <span className="bl-score-of">/10</span>
+                    <span className="bl-score-label">{check.rating.label}</span>
+                    <span className="bl-score-enum">
+                      → difficulty {check.rating.suggestedDifficulty} (
+                      {DIFFICULTY_NAMES[check.rating.suggestedDifficulty]})
+                    </span>
+                  </div>
+                  <div
+                    className={`bl-score-bar${
+                      check.rating.score < 4 ? '' : check.rating.score < 7 ? ' mid' : ' hi'
+                    }`}
+                  >
+                    <i style={{ width: `${check.rating.score * 10}%` }} />
+                  </div>
+
+                  {/* Từng yếu tố: hiện cả thanh để thấy ngay cái nào đang đẩy điểm lên. Số liệu thật
+                      nằm ở tooltip cho đỡ chật. */}
+                  <div className="bl-factors">
+                    {check.rating.factors.map((f) => (
+                      <div className="bl-factor" key={f.key} title={`${f.detail} (×${f.weight})`}>
+                        <span className="bl-factor-name">{f.label}</span>
+                        <span className="bl-factor-bar">
+                          <i style={{ width: `${f.value * 100}%` }} />
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {check.rating.suggestedDifficulty !== levelMeta.difficulty && (
+                    <button
+                      className="bl-apply-diff"
+                      onClick={() =>
+                        setLevelMeta({
+                          ...levelMeta,
+                          difficulty: check.rating.suggestedDifficulty,
+                        })
+                      }
+                    >
+                      Đặt difficulty = {check.rating.suggestedDifficulty} (
+                      {DIFFICULTY_NAMES[check.rating.suggestedDifficulty]}), đang là{' '}
+                      {levelMeta.difficulty}
+                    </button>
+                  )}
+                </>
+              )}
+
+              {/* Giấu màu không đổi được kết quả giải, nhưng người chơi thật thì mò chứ không nhìn
+                  thấy như mô phỏng — phải nói rõ kẻo con số bị đọc thành "màn này dễ". */}
+              {check.result.hiddenCount > 0 && (
+                <div className="bl-check-approx">
+                  {check.result.hiddenCount} khẩu giấu màu — lời giải này chơi với thông tin đầy đủ,
+                  nên đây là giới hạn trên; người chơi không nhìn trước được màu.
+                </div>
+              )}
+
+              {check.result.ignoredMechanics.length > 0 && (
+                <div className="bl-check-approx">
+                  Chỉ là gần đúng — mô phỏng chưa xử: {check.result.ignoredMechanics.join('; ')}.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tạo nhanh */}
+          <div className="bl-quick">
+            <label className="bl-quick-field">
+              <span>Hàng</span>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={rowCount}
+                // Bỏ qua giá trị không dùng được thay vì kẹp về 1: xoá trắng ô để gõ lại (raw = '')
+                // mà kẹp về 1 hàng là dồn hết súng của mọi hàng vào một chỗ giữa lúc đang gõ.
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (e.target.value.trim() && Number.isFinite(n) && n >= 1) setDockRowCount(n);
+                }}
+              />
+            </label>
+            <label className="bl-quick-field">
+              <span>Đạn/súng</span>
+              <input
+                type="number"
+                min={1}
+                value={bulletsPerBlaster}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (Number.isFinite(n) && n >= 1) setBulletsPerBlaster(Math.floor(n));
+                }}
+              />
+            </label>
+            <button
+              className="bl-auto"
+              disabled={!shootableBlocks}
+              onClick={() => setAutoOpen(true)}
+              title="Mở bảng tạo nhanh: chọn độ khó, cơ chế và số lượng từng cơ chế"
+            >
+              ⚡ Tạo theo màu khối…
+            </button>
+            <button
+              className="bl-icon-btn bl-danger"
+              disabled={!blasters.length}
+              onClick={() => confirm('Xoá toàn bộ súng?') && (clearShooters(), setSelectedId(null))}
+              title="Xoá toàn bộ súng"
+            >
+              🗑
+            </button>
+          </div>
+
+          {autoSummary && (
+            <div className="bl-note">
+              {autoSummary.text}
+              {autoSummary.notes.map((n) => (
+                <div className="bl-note-warn" key={n}>
+                  {n}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Sửa 1 súng */}
+          {!selected ? (
+            <div className="bl-note">Bấm một súng ở trên để sửa, hoặc “+” để thêm mới.</div>
+          ) : (
+            <div className="bl-edit">
+              <div className="bl-edit-grid">
+                <label>
+                  <span>id</span>
+                  <input
+                    type="number"
+                    className={idError ? 'bl-bad' : ''}
+                    value={idDraft}
+                    onChange={(e) => applyId(e.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Đạn</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={selected.bulletCount}
+                    onChange={(e) =>
+                      updateBlaster(selected.id, { bulletCount: Math.max(0, Number(e.target.value)) })
+                    }
+                  />
+                </label>
+              </div>
+              {idError && <div className="bl-err">{idError}</div>}
+
+              {/* Chỉ các màu ĐANG CÓ trên hình (cộng thêm màu khẩu này đang mang, nếu hình không
+                  còn khối màu đó nữa) — xem `gridColors`. */}
+              <div className="bl-swatches">
+                {colorsWith(selected.color, selected.secondaryColor).map((c) => (
+                  <button
+                    key={c.id}
+                    className={`swatch${c.id === selected.color ? ' active' : ''}${
+                      goneNote(c.id) ? ' gone' : ''
+                    }`}
+                    style={{ background: c.hex }}
+                    title={`Màu 1 (bắn trước): ${c.id} — ${c.name}${goneNote(c.id)}`}
+                    // Đổi màu 1 thành đúng màu 2 thì bỏ luôn màu 2: súng hai màu mà hai màu giống
+                    // nhau là data vô nghĩa (mô phỏng cũng bỏ qua túi đạn thứ hai).
+                    onClick={() =>
+                      updateBlaster(selected.id, {
+                        color: c.id,
+                        ...(c.id === selected.secondaryColor
+                          ? { secondaryColor: WALL_COLOR_ID }
+                          : null),
+                      })
+                    }
+                  />
+                ))}
+              </div>
+
+              <div className="bl-edit-grid">
+                {/* Màu 2 (súng Double): một ô chọn gập/mở như `type`/`Hàng`, nhưng mở ra LƯỚI Ô MÀU
+                    chứ không phải danh sách tên màu — chọn màu thì phải nhìn màu. Dãy 17 ô phẳng
+                    kiểu cũ thì quá bé để thấy đang chọn ô nào, mà lại nằm sát dãy màu 1 nên rất dễ
+                    bấm nhầm. Ô màu trên nút cho biết ngay khẩu này có màu 2 hay không; màu đang là
+                    màu 1 bị gạch chéo vì súng hai màu cùng màu là vô nghĩa. */}
+                <div className="bl-edit-second">
+                  <span>🎨 Màu 2 (bắn sau)</span>
+                  <button
+                    className={`bl-second-btn${secondOpen ? ' open' : ''}`}
+                    onClick={() => setSecondOpen((o) => !o)}
+                    title="Màu thứ hai của súng Double — bắn sau khi hết màu 1"
+                  >
+                    <span
+                      className={`bl-second-dot${selected.secondaryColor === WALL_COLOR_ID ? ' off' : ''}`}
+                      style={
+                        selected.secondaryColor === WALL_COLOR_ID
+                          ? undefined
+                          : { background: gameColorById(selected.secondaryColor)?.hex }
+                      }
+                    />
+                    <span className="bl-second-name">
+                      {selected.secondaryColor === WALL_COLOR_ID
+                        ? 'không dùng (1 màu)'
+                        : `${selected.secondaryColor} — ${gameColorById(selected.secondaryColor)?.name}`}
+                    </span>
+                    <span className="bl-second-caret">▾</span>
+                  </button>
+                  {secondOpen && (
+                    <div className="bl-second-list">
+                      <button
+                        className={`bl-second-none${selected.secondaryColor === WALL_COLOR_ID ? ' active' : ''}`}
+                        onClick={() => {
+                          updateBlaster(selected.id, { secondaryColor: WALL_COLOR_ID });
+                          setSecondOpen(false);
+                        }}
+                      >
+                        ✕ không dùng — súng một màu
+                      </button>
+                      <div className="bl-second-grid">
+                        {colorsWith(selected.color, selected.secondaryColor).map((c) => (
+                          <button
+                            key={c.id}
+                            className={`bl-second-sw${c.id === selected.secondaryColor ? ' active' : ''}${
+                              goneNote(c.id) ? ' gone' : ''
+                            }`}
+                            style={{ background: c.hex }}
+                            disabled={c.id === selected.color}
+                            title={
+                              c.id === selected.color
+                                ? `${c.id} — ${c.name} (đang là màu 1, không chọn được)`
+                                : `${c.id} — ${c.name}${goneNote(c.id)}`
+                            }
+                            onClick={() => {
+                              updateBlaster(selected.id, { secondaryColor: c.id });
+                              setSecondOpen(false);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <label>
+                  <span>type</span>
+                  <select
+                    value={selected.type}
+                    onChange={(e) => updateBlaster(selected.id, { type: Number(e.target.value) })}
+                  >
+                    {BLASTER_TYPES.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.id} — {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Hàng</span>
+                  <select
+                    value={rowOf(selected.id)}
+                    onChange={(e) => moveBlaster(selected.id, Number(e.target.value), -1)}
+                  >
+                    {rowOf(selected.id) < 0 && <option value={-1}>(chưa xếp)</option>}
+                    {dockColumns.map((_, i) => (
+                      <option key={i} value={i}>
+                        Hàng {i + 1}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>🧊 iceHp</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={selected.iceHp}
+                    onChange={(e) =>
+                      updateBlaster(selected.id, { iceHp: Math.max(0, Number(e.target.value)) })
+                    }
+                  />
+                </label>
+                <label className="bl-edit-check">
+                  <input
+                    type="checkbox"
+                    checked={selected.isHidden}
+                    onChange={(e) => updateBlaster(selected.id, { isHidden: e.target.checked })}
+                  />
+                  ❓ isHidden
+                </label>
+              </div>
+
+              {/* Cơ chế Connected: nối 2 súng, quan hệ luôn hai chiều. */}
+              <div className="bl-links">
+                <span className="bl-links-head">🔗 Nối với</span>
+                {selected.connectedBlasterIds.length === 0 && (
+                  <span className="bl-links-none">chưa nối</span>
+                )}
+                {selected.connectedBlasterIds.map((pid) => {
+                  const partner = byId.get(pid);
+                  const pos = dockPositionOf(dockColumns, pid);
+                  return (
+                    <button
+                      className={`bl-link-chip${partner ? '' : ' bl-chip-missing'}`}
+                      key={pid}
+                      onClick={() => toggleBlasterConnection(selected.id, pid)}
+                      title={
+                        partner
+                          ? `Bỏ nối với ${pid}${pos ? ` (hàng ${pos[0] + 1}, bậc ${pos[1] + 1})` : ''}`
+                          : `id ${pid} không có súng nào — bấm để bỏ nối`
+                      }
+                    >
+                      {partner && (
+                        <span
+                          className="bl-chip-swatch"
+                          style={{ background: gameColorById(partner.color)?.hex ?? '#000' }}
+                        />
+                      )}
+                      {pid} ✕
+                    </button>
+                  );
+                })}
+                {/* Chỗ này chỉ để XEM và BỎ nối. Tạo nối thì đi qua thanh mechanic ở trên — hai lối
+                    cùng làm một việc chỉ khiến người dùng phải đoán nên dùng lối nào. */}
+                <button
+                  className={`bl-add${mechanic === 'connected' ? ' active' : ''}`}
+                  onClick={() => {
+                    setMechanic('connected');
+                    setPendingLink(selected.id);
+                  }}
+                  title="Bật mechanic Connected và chọn sẵn khẩu này, rồi bấm khẩu thứ hai"
+                >
+                  + nối
+                </button>
+              </div>
+
+              <div className="bl-edit-actions">
+                <button onClick={() => nudge(-1)} title="Lên một chỗ trong hàng">
+                  ▲
+                </button>
+                <button onClick={() => nudge(1)} title="Xuống một chỗ trong hàng">
+                  ▼
+                </button>
+                <span className="bl-spacer" />
+                <button
+                  className="bl-danger"
+                  onClick={() => {
+                    removeBlaster(selected.id);
+                    setSelectedId(null);
+                  }}
+                  title="Xoá súng này"
+                >
+                  🗑 Xoá
+                </button>
+              </div>
+
+              {/* Key/Lock giờ đã được mô phỏng, chỉ còn các loại khác là chưa — đừng để dòng nhắc cũ
+                  nói oan là tool không kiểm khoá/chìa. */}
+              {selected.type !== BLASTER_TYPE_NORMAL &&
+                selected.type !== BLASTER_TYPE_KEY &&
+                selected.type !== BLASTER_TYPE_LOCK && (
+                  <div className="bl-note">
+                    Loại {BLASTER_TYPES.find((t) => t.id === selected.type)?.name} được ghi nguyên vào
+                    file, nhưng tool chưa kiểm luật riêng của nó (generator, búa…).
+                  </div>
+                )}
+            </div>
+          )}
+
+          {/* Panel này không còn hộp lỗi / hộp lưu ý nào. Bảng "Đạn so với khối" ở trên vẫn tô đỏ màu
+              nào thiếu đạn, và nút Thử giải vẫn nói rõ vì sao không win được — hai chỗ đó đủ để thấy
+              vấn đề. `validateShooters()` / `connectionWarnings()` vẫn nằm trong core (bảng Xuất
+              .asset còn dùng), nên bật lại chỗ này lúc nào cũng được. */}
+        </div>
       </div>
 
       {autoOpen && (

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { WALL_HEX, matchGameColor } from '@voxel/core';
 import { useEditor } from '../store';
 import { PaletteSwatches } from './PaletteSwatches';
 import { yUpToEditorAll } from '../lib/axis';
@@ -7,11 +8,9 @@ import { fillGridCell } from '../lib/wallCell';
 import {
   crossSectionZRange,
   detectGrid,
-  hexToRgb,
   LAYER_SHAPES,
   loadImageData,
   sampleGrid,
-  snapToPalette,
   zLayers,
   type GridInfo,
   type LayerShape,
@@ -27,6 +26,9 @@ type EditMode = 'paint' | 'erase' | 'none';
 // Cách đổ màu khi định hình tầng.
 type LayerColorFill = 'image' | 'wrap';
 
+/** Trần cỡ ngòi. 32 đã quét gần hết một lưới cỡ thường, to hơn thì kéo một nét là xoá sạch ảnh. */
+const MAX_BRUSH = 32;
+
 const rgbToHex = (c: [number, number, number]) =>
   '#' +
   c
@@ -36,6 +38,7 @@ const rgbToHex = (c: [number, number, number]) =>
 export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps) {
   const palette = useEditor((s) => s.palette);
   const color = useEditor((s) => s.color);
+  const setColor = useEditor((s) => s.setColor);
   const stampVoxels = useEditor((s) => s.stampVoxels);
 
   const [img, setImg] = useState<ImageData | null>(null);
@@ -62,14 +65,23 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
   // Vẫn giữ biến (thay vì gỡ sạch) để mọi chỗ tính màu bên dưới không phải sửa khi bật lại.
   const colorMode: ColorMode = 'palette';
   const [editMode, setEditMode] = useState<EditMode>('none');
+  // Cỡ ngòi: một nét chạm vào ô vuông brush×brush quanh ô đang trỏ (brush=1 là từng ô như trước).
+  const [brush, setBrush] = useState(1);
+  const [brushText, setBrushText] = useState('1');
+  /** Ô đang rê chuột qua — để vẽ khung xem trước vùng ngòi sẽ ăn vào. */
+  const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
   // Nền preview: tối (mặc định) hoặc sáng cho dễ nhìn ảnh tối.
   const [lightBg, setLightBg] = useState(false);
 
   const previewRef = useRef<HTMLCanvasElement>(null);
+  const brushRef = useRef<HTMLCanvasElement>(null);
   const sideRef = useRef<HTMLCanvasElement>(null);
   const paintingRef = useRef(false);
+  /** Ô của lần chấm trước trong cùng một nét kéo — để nối liền, xem `applyStrokeAt`. */
+  const lastCellRef = useRef<{ r: number; c: number } | null>(null);
 
   const clampThickness = (v: number) => Math.max(1, Math.min(64, Math.round(v) || 1));
+  const clampBrush = (v: number) => Math.max(1, Math.min(MAX_BRUSH, Math.round(v) || 1));
 
   const pixelAspect = (gi: GridInfo) =>
     (gi.bbox.maxY - gi.bbox.minY + 1) / (gi.bbox.maxX - gi.bbox.minX + 1);
@@ -82,10 +94,32 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
     setRowsText(String(r));
   };
 
-  // Màu hiển thị của 1 ô theo chế độ: gốc hoặc snap về bảng màu.
+  /** hex (chữ hoa) -> hex gốc trong bảng màu, để nhận ra ô đã mang đúng một màu của bảng. */
+  const paletteByHex = useMemo(
+    () => new Map(palette.map((c) => [c.toUpperCase(), c])),
+    [palette],
+  );
+
+  /**
+   * Màu hiển thị của 1 ô: màu ảnh gốc, hoặc quy về bảng màu game.
+   *
+   * Phép quy dùng `matchGameColor` — đúng cái mà lúc xuất .asset dùng — nên hai chỗ không bao giờ
+   * lệch nhau, và được hai thứ quan trọng của nó:
+   *
+   *  - KHÔNG bao giờ tự sinh ra tường. Trước đây phép dò xét cả ô tường, nên mọi pixel xám xám
+   *    trong ảnh lặng lẽ thành khối tường: người dựng chỉ chọn màu mà lại ra mechanic (khối không
+   *    bắn được, không tính vào điều kiện thắng) và phải mở bảng Xuất mới thấy. Muốn tường thì tô
+   *    tay bằng nút 🧱 Tường.
+   *  - Đo trong Lab chứ không phải RGB thô: xám #888 ra DarkGray, chứ không phải Brown như phép đo
+   *    RGB cũ (khoảng cách RGB đánh giá sai nặng ở màu xám và màu bão hoà).
+   */
   const displayColor = (cell: string | null): string | null => {
     if (!cell) return null;
-    return colorMode === 'palette' ? snapToPalette(hexToRgb(cell), palette) : cell;
+    if (colorMode !== 'palette') return cell;
+    // Ô do người dùng tự tô thì đã là một màu trong bảng — giữ nguyên, KỂ CẢ ô tường.
+    const exact = paletteByHex.get(cell.toUpperCase());
+    if (exact) return exact;
+    return matchGameColor(cell).color.hex;
   };
 
   // Lấy mẫu lại từ ảnh (màu gốc) khi ảnh/độ phân giải đổi.
@@ -195,6 +229,15 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
     [rowStats, thickness, layerShape, layerColor, colorMode, palette, cells, cols, rows],
   );
 
+  // Ô tường (tô tay) — hiện luôn số lượng để biết bàn này có mechanic hay không, khỏi phải mở bảng
+  // Xuất mới thấy.
+  const wallCells = useMemo(() => {
+    let n = 0;
+    for (const c of cells) if (c && displayColor(c) === WALL_HEX) n++;
+    return n;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cells, palette]);
+
   const mirrorLeftToRight = () => {
     setCells((prev) => {
       if (!prev.length) return prev;
@@ -245,6 +288,32 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
     ctx.stroke();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cells, cols, rows, colorMode, palette, lightBg]);
+
+  // Khung xem trước vùng ngòi, vẽ trên một canvas phủ lên trên: để chung với lưới thì mỗi lần nhích
+  // chuột phải tô lại toàn bộ ô (lưới tối đa 200×200), còn đây chỉ là một khung chữ nhật.
+  useEffect(() => {
+    const cv = brushRef.current;
+    if (!cv) return;
+    const px = 12;
+    cv.width = cols * px;
+    cv.height = rows * px;
+    const ctx = cv.getContext('2d')!;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    if (!hover || editMode === 'none') return;
+    const box = brushBox(hover.r, hover.c);
+    const x = box.c0 * px;
+    const y = box.r0 * px;
+    const w = (box.c1 - box.c0 + 1) * px;
+    const h = (box.r1 - box.r0 + 1) * px;
+    // Viền đen dưới, trắng trên: nền lưới có cả ô sáng lẫn ô tối nên một màu là có chỗ chìm mất.
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+    ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = editMode === 'erase' ? '#ff9db0' : '#ffffff';
+    ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hover, brush, cols, rows, editMode]);
 
   // Vẽ preview mặt BÊN (nhìn ngang) để thấy dáng khối theo độ dày.
   useEffect(() => {
@@ -300,27 +369,71 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
   }, [initialFile]);
 
   // ----- Vẽ/xóa ô trên preview -----
-  const cellIndexFromEvent = (e: React.PointerEvent): number | null => {
+  const cellFromEvent = (e: React.PointerEvent): { r: number; c: number } | null => {
     const cv = previewRef.current;
     if (!cv) return null;
     const rect = cv.getBoundingClientRect();
     const c = Math.floor(((e.clientX - rect.left) / rect.width) * cols);
     const r = Math.floor(((e.clientY - rect.top) / rect.height) * rows);
     if (c < 0 || c >= cols || r < 0 || r >= rows) return null;
-    return r * cols + c;
+    return { r, c };
+  };
+
+  /**
+   * Ô vuông brush×brush mà ngòi ăn vào khi trỏ tại (r, c) — đã kẹp trong lưới.
+   *
+   * Ngòi lẻ có ô chính giữa nên vùng ăn cân đều quanh con trỏ. Ngòi chẵn thì không, phải lệch một
+   * bên: offset = floor((n-1)/2) cho vùng nhô xuống-phải nửa ô, tức ô đang trỏ là ô trên-trái của
+   * vùng — cùng quy ước với ngòi vuông của các app vẽ pixel, và ô đang trỏ luôn nằm trong vùng ăn.
+   */
+  const brushBox = (r: number, c: number) => {
+    const off = Math.floor((brush - 1) / 2);
+    return {
+      r0: Math.max(0, r - off),
+      c0: Math.max(0, c - off),
+      r1: Math.min(rows - 1, r - off + brush - 1),
+      c1: Math.min(cols - 1, c - off + brush - 1),
+    };
+  };
+
+  /**
+   * Chấm ngòi tại (r, c), và nối liền từ ô của lần chấm trước trong cùng nét kéo.
+   *
+   * Phải nối vì `pointermove` chỉ bắn ra vài chục điểm mỗi giây: kéo nhanh là hai điểm liên tiếp
+   * cách nhau chục ô, chấm rời từng điểm thì nét ra thành các mảng đứt quãng.
+   */
+  const applyStrokeAt = (r: number, c: number) => {
+    const val = editMode === 'erase' ? null : color;
+    const last = lastCellRef.current;
+    lastCellRef.current = { r, c };
+    setCells((prev) => {
+      if (!prev.length) return prev;
+      let next: (string | null)[] | null = null;
+      const steps = last ? Math.max(Math.abs(r - last.r), Math.abs(c - last.c)) : 0;
+      for (let i = 0; i <= steps; i++) {
+        const rr = last && steps ? Math.round(last.r + ((r - last.r) * i) / steps) : r;
+        const cc = last && steps ? Math.round(last.c + ((c - last.c) * i) / steps) : c;
+        const box = brushBox(rr, cc);
+        for (let br = box.r0; br <= box.r1; br++) {
+          for (let bc = box.c0; bc <= box.c1; bc++) {
+            const idx = br * cols + bc;
+            if (prev[idx] === val) continue;
+            // Chỉ nhân bản mảng khi thật sự có ô đổi — rê chuột trong vùng đã tô thì không tạo
+            // state mới, khỏi vẽ lại canvas mỗi lần nhích chuột.
+            if (!next) next = [...prev];
+            next[idx] = val;
+          }
+        }
+      }
+      return next ?? prev;
+    });
   };
 
   const applyEditAt = (e: React.PointerEvent) => {
     if (editMode === 'none') return; // chế độ xem, không sửa
-    const idx = cellIndexFromEvent(e);
-    if (idx == null) return;
-    setCells((prev) => {
-      const val = editMode === 'erase' ? null : color;
-      if (prev[idx] === val) return prev;
-      const next = [...prev];
-      next[idx] = val;
-      return next;
-    });
+    const cell = cellFromEvent(e);
+    if (!cell) return;
+    applyStrokeAt(cell.r, cell.c);
   };
 
   // Dịch toàn bộ pixel theo hướng (dr theo hàng, dc theo cột); ô ra ngoài bị bỏ.
@@ -471,6 +584,49 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
                   🧹 Xóa
                 </button>
               </div>
+              {/* Cỡ ngòi: chung cho cả vẽ lẫn xoá, đúng như ngòi bút của app vẽ — một nét ăn cả ô
+                  vuông n×n chứ không phải từng ô. Hiện cả thanh kéo lẫn ô số: kéo để thử nhanh,
+                  gõ số khi cần đúng một cỡ. */}
+              {editMode !== 'none' && (
+                <>
+                  <span className="tb-glabel">Ngòi</span>
+                  <input
+                    className="brush-range"
+                    type="range"
+                    min={1}
+                    max={MAX_BRUSH}
+                    value={brush}
+                    title={`Cỡ ngòi: mỗi nét ăn ${brush}×${brush} ô`}
+                    onChange={(e) => {
+                      const n = clampBrush(Number(e.target.value));
+                      setBrush(n);
+                      setBrushText(String(n));
+                    }}
+                  />
+                  <input
+                    className="num"
+                    type="number"
+                    min={1}
+                    max={MAX_BRUSH}
+                    title={`Cỡ ngòi (1–${MAX_BRUSH} ô)`}
+                    value={brushText}
+                    onChange={(e) => {
+                      const t = e.target.value;
+                      setBrushText(t);
+                      const n = Number(t);
+                      if (t !== '' && Number.isFinite(n) && n >= 1) setBrush(clampBrush(n));
+                    }}
+                    onBlur={() => {
+                      const n = clampBrush(Number(brushText));
+                      setBrush(n);
+                      setBrushText(String(n));
+                    }}
+                  />
+                  <span className="tb-x">
+                    {brush}×{brush} ô
+                  </span>
+                </>
+              )}
               {/* Cặp nút "Màu ảnh / Bảng màu" tạm ẩn theo yêu cầu — luôn chạy ở chế độ bảng màu.
                   Bật lại thì render lại khối `.seg` này và đổi `colorMode` về `useState`. */}
               {/* Ghi hẳn chữ thay vì mỗi ký hiệu ⇋: nút này làm một việc rất cụ thể (lấy nửa trái
@@ -487,6 +643,25 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
                   <PaletteSwatches />
                 </div>
               )}
+            </div>
+
+            {/* Mechanic của khối — cùng lối vào có tên như toolbar chính và bảng Tô lớp. Ô tường
+                vốn nằm sẵn cuối dãy bảng màu, nhưng ở màn nhập ảnh thì chẳng ai đoán ra rằng cái ô
+                gạch đó là một cơ chế chứ không phải một màu xám. */}
+            <div className="tb-group">
+              <span className="tb-glabel">Mechanic</span>
+              <button
+                className={color === WALL_HEX ? 'active' : ''}
+                onClick={() => {
+                  setColor(WALL_HEX);
+                  // Bấm tường là để VẼ tường — đang ở chế độ xem/xoá thì tự chuyển sang vẽ, không
+                  // thì bấm xong tô mãi không ra gì.
+                  if (editMode !== 'paint') setEditMode('paint');
+                }}
+                title="Tường: khối không bao giờ bị phá, không súng nào bắn được, dùng để bịt hướng bắn — bấm rồi vẽ như một màu thường. Phép dò màu từ ảnh KHÔNG bao giờ tự sinh ra tường, phải tô tay ở đây."
+              >
+                🧱 Tường{wallCells ? ` (${wallCells})` : ''}
+              </button>
             </div>
 
             {/* Định hình tầng (mặt cắt ngang) + màu tầng */}
@@ -528,7 +703,9 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
               )}
             </div>
 
-            <span className="modal-dim">≈ {estBlocks} khối</span>
+            <span className="modal-dim">
+              ≈ {estBlocks} khối{wallCells ? ` · ${wallCells} ô tường` : ''}
+            </span>
           </>
         )}
 
@@ -566,21 +743,34 @@ export function ImportImagePanel({ onClose, initialFile }: ImportImagePanelProps
         )}
         {cells.length ? (
           <>
-            <canvas
-              ref={previewRef}
-              className="import-canvas"
-              style={{ cursor: editMode === 'none' ? 'default' : 'crosshair' }}
-              onPointerDown={(e) => {
-                paintingRef.current = true;
-                previewRef.current?.setPointerCapture(e.pointerId);
-                applyEditAt(e);
-              }}
-              onPointerMove={(e) => {
-                if (paintingRef.current) applyEditAt(e);
-              }}
-              onPointerUp={() => (paintingRef.current = false)}
-              onPointerLeave={() => (paintingRef.current = false)}
-            />
+            <div className="import-canvas-wrap">
+              <canvas
+                ref={previewRef}
+                className="import-canvas"
+                style={{ cursor: editMode === 'none' ? 'default' : 'crosshair' }}
+                onPointerDown={(e) => {
+                  paintingRef.current = true;
+                  // Nét mới bắt đầu từ đây, không nối vào ô cuối của nét trước.
+                  lastCellRef.current = null;
+                  previewRef.current?.setPointerCapture(e.pointerId);
+                  applyEditAt(e);
+                }}
+                onPointerMove={(e) => {
+                  setHover(cellFromEvent(e));
+                  if (paintingRef.current) applyEditAt(e);
+                }}
+                onPointerUp={() => {
+                  paintingRef.current = false;
+                  lastCellRef.current = null;
+                }}
+                onPointerLeave={() => {
+                  paintingRef.current = false;
+                  lastCellRef.current = null;
+                  setHover(null);
+                }}
+              />
+              <canvas ref={brushRef} className="import-brush-overlay" />
+            </div>
             {layerShape === 'off' && thickness > 1 && (
               <div className="side-preview">
                 <div className="side-preview-label">Mặt bên</div>

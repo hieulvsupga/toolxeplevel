@@ -8,6 +8,11 @@ import {
 } from './blasters';
 import type { LevelLayer } from './layers';
 import type { Vec3 } from './types';
+import {
+  DEFAULT_WRAPPER_HP,
+  type BoxWrapper,
+  type WrapperEntry,
+} from './wrappers';
 
 /**
  * GUID của `Assets/_Project/Scripts/Data/LevelData.cs` (đọc từ LevelData.cs.meta). Đây là thứ
@@ -62,6 +67,39 @@ function vec3(v: Vec3): string {
 }
 
 /**
+ * ĐỔI CHIỀU SÂU giữa toạ độ editor và toạ độ trong file — lật dấu y.
+ *
+ * Vì sao phải lật: Unity thuận TRÁI (X phải, Y lên, Z đi VÀO màn hình) còn scene của tool là
+ * three.js thuận PHẢI. File chỉ chứa ba con số, mà transform gốc của level (`rootLocalEulerAngles`)
+ * là một phép QUAY — quay thì không đổi được chiều thuận. Nên cùng một bộ số, hai bên vẽ ra hai
+ * hình soi gương nhau: trong game, khối lộ ra mặt +Y về phía người chơi kèm +X sang phải, còn
+ * editor thì +X sang phải mà +Y lại đi ra xa. Hệ quả: mọi thứ có chiều (chữ viết, mặt người, logo)
+ * hiện đúng trong editor thì vào game bị lộn gương.
+ *
+ * Lật y ở đúng ranh giới đọc/ghi file là chỗ rẻ nhất và khó sai nhất: mọi phần còn lại của tool
+ * (dựng khối, tính depth, thử giải, danh sách layer) tiếp tục làm việc trên toạ độ editor, và
+ * ĐI/VỀ đều qua đây nên nhập lại file vừa xuất là ra đúng level cũ.
+ *
+ * Chọn lật y (chiều sâu) chứ không lật x: lật y thì góc nhìn của game trùng đúng góc mặc định của
+ * editor (camera đứng phía −Y), tức thấy sao xuất ra vậy. Lật x cũng hết gương nhưng game sẽ hiện
+ * mặt ĐỐI DIỆN với mặt người dựng đang nhìn.
+ */
+function flipDepthVec(p: Vec3): Vec3 {
+  return { x: p.x, y: -p.y, z: p.z };
+}
+
+/**
+ * Lật chiều sâu cho cả danh sách layer. Dùng cho chỗ cần TOẠ ĐỘ FILE ngoài lúc ghi file — khung xem
+ * trước hướng khối phải vẽ đúng thứ game sẽ vẽ. Xem `flipDepthVec`.
+ */
+export function toFileSpaceLayers(layers: LevelLayer[]): LevelLayer[] {
+  return layers.map((layer) => ({
+    ...layer,
+    voxelPositions: layer.voxelPositions.map(flipDepthVec),
+  }));
+}
+
+/**
  * Sinh nội dung file `.asset` (YAML của Unity) cho một `LevelData`.
  *
  * Ghi phần khối (`layers`) và phần shooter (`blasters` + `dockColumns`); các mảng cơ chế còn lại để
@@ -74,6 +112,8 @@ export function toUnityAsset(
   layers: LevelLayer[],
   meta: LevelMeta,
   shooters: ShooterSetup = EMPTY_SHOOTERS,
+  /** Lớp bọc (`iceWrapperData`) — toạ độ EDITOR, hàm này tự lật sang toạ độ file. */
+  wrappers: WrapperEntry[] = [],
 ): string {
   const lines: string[] = [
     '%YAML 1.1',
@@ -115,7 +155,8 @@ export function toUnityAsset(
       }
       lines.push('    voxelPositions:');
       for (const p of layer.voxelPositions) {
-        lines.push(`    - ${vec3(p)}`);
+        // Toạ độ editor -> toạ độ file. Xem `flipDepthVec`.
+        lines.push(`    - ${vec3(flipDepthVec(p))}`);
       }
     }
   }
@@ -123,8 +164,47 @@ export function toUnityAsset(
   // Thứ tự các field dưới đây bám đúng thứ tự khai báo trong LevelData.cs — Unity ghi asset theo
   // thứ tự field, nên giữ nguyên thì diff giữa file mình xuất và file Unity ghi lại sau khi mở là
   // rỗng, thay vì đầy những dòng chỉ đổi chỗ.
+  /** Ghi một mảng lớp bọc (`iceWrapperData` / `shieldData` — cùng một khuôn field). */
+  const pushWrappers = (field: string, list: WrapperEntry[]) => {
+    if (!list.length) {
+      lines.push(`  ${field}: []`);
+      return;
+    }
+    lines.push(`  ${field}:`);
+    for (const w of list) {
+      // `Bounds` của Unity ghi ra thành hai vector con: m_Center và m_Extent (extent = NỬA cỡ).
+      lines.push(
+        '  - bounds:',
+        `      m_Center: ${vec3(flipDepthVec(w.bounds.center))}`,
+        // Lật chiều sâu KHÔNG đổi độ dày, nên extent giữ nguyên dấu (nó là nửa cỡ, luôn dương).
+        `      m_Extent: ${vec3(w.bounds.extent)}`,
+        `    hp: ${num(w.hp)}`,
+      );
+      if (!w.hpTexts.length) {
+        lines.push('    hpTexts: []');
+      } else {
+        lines.push('    hpTexts:');
+        for (const t of w.hpTexts) {
+          // `direction`/`up` là VECTOR nên cũng phải soi gương theo — phép lật chiều sâu lật cả
+          // hướng, không lật thì số HP quay mặt sai phía.
+          lines.push(
+            `    - position: ${vec3(flipDepthVec(t.position))}`,
+            `      direction: ${vec3(flipDepthVec(t.direction))}`,
+            `      up: ${vec3(flipDepthVec(t.up))}`,
+          );
+        }
+      }
+      if (!w.innerVoxelPositions.length) {
+        lines.push('    innerVoxelPositions: []');
+      } else {
+        lines.push('    innerVoxelPositions:');
+        for (const p of w.innerVoxelPositions) lines.push(`    - ${vec3(flipDepthVec(p))}`);
+      }
+    }
+  };
+
+  pushWrappers('iceWrapperData', wrappers.filter((w) => w.kind === 'ice'));
   lines.push(
-    '  iceWrapperData: []',
     '  largeVoxelData: []',
     '  doubleLargeVoxelData: []',
     '  giftWrapperData: []',
@@ -132,9 +212,9 @@ export function toUnityAsset(
     '  shrinkingCoverData: []',
     '  bombData: []',
     '  colorBoxData: []',
-    '  shieldData: []',
-    '  flyingPiggyData: []',
   );
+  pushWrappers('shieldData', wrappers.filter((w) => w.kind === 'shield'));
+  lines.push('  flyingPiggyData: []');
 
   if (shooters.blasters.length === 0) {
     lines.push('  blasters: []');
@@ -179,6 +259,8 @@ export interface ParsedLevelAsset {
   meta: LevelMeta;
   layers: LevelLayer[];
   shooters: ShooterSetup;
+  /** Lớp bọc đọc từ `iceWrapperData`, đã về TOẠ ĐỘ EDITOR. */
+  wrappers: BoxWrapper[];
   /** Chuyện đáng ngờ nhưng không chặn được việc đọc file — hiện cho người dùng xem. */
   warnings: string[];
 }
@@ -219,8 +301,12 @@ const VEC3_RE = new RegExp(
  * thụt lề và các trường mình cần đều là scalar hoặc Vector3 một dòng, nên bám sát dạng đó vừa gọn
  * vừa không kéo thêm phụ thuộc chỉ để đọc vài chục dòng.
  *
- * Các mảng cơ chế (ice/bomb/playpen…) bị bỏ qua — tool chưa dựng được chúng, và đọc vào rồi ghi ra
- * thành mảng rỗng thì tệ hơn là nói thẳng ra rằng chúng không được giữ.
+ * `iceWrapperData` và `shieldData` đọc được (về `BoxWrapper`): chỉ lấy hộp + hp, còn `hpTexts` và
+ * `innerVoxelPositions` thì tính lại lúc xuất từ hộp và grid — đọc vào giữ nguyên thì chúng lệch
+ * ngay khi người dùng sửa khối bên trong.
+ *
+ * Các mảng cơ chế còn lại (bomb/playpen/shield…) bị bỏ qua — tool chưa dựng được chúng, và đọc vào
+ * rồi ghi ra thành mảng rỗng thì tệ hơn là nói thẳng ra rằng chúng không được giữ.
  */
 export function parseUnityAsset(text: string): ParsedLevelAsset {
   const lines = text.split(/\r?\n/);
@@ -256,6 +342,42 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
   let blaster: BlasterEntry | undefined;
   let inBlasters = false;
   let inDock = false;
+  const wrappers: BoxWrapper[] = [];
+  /** Đang đọc mảng lớp bọc nào (null = không ở trong mảng nào). */
+  let wrapperKind: BoxWrapper['kind'] | null = null;
+  /** Phần tử `iceWrapperData` đang đọc dở: chỉ cần tâm + extent + hp. */
+  let wrap: { center?: Vec3; extent?: Vec3; hp: number } | undefined;
+
+  /**
+   * Chốt một lớp bọc vừa đọc xong: `Bounds` -> ô lưới.
+   *
+   * Ngược đúng `wrapperBounds`: extent là nửa cỡ tính cả nửa ô ở hai đầu, nên mép ô là
+   * `center ± extent`, còn CHỈ SỐ ô đầu/cuối phải co vào nửa ô. Làm tròn để không bị nhiễu số thực
+   * của file (0.4999…).
+   */
+  const flushWrapper = () => {
+    if (wrap?.center && wrap.extent) {
+      // Tâm là một điểm nên phải lật chiều sâu; extent là độ dày nên không.
+      const c = flipDepthVec(wrap.center);
+      const e = wrap.extent;
+      wrappers.push({
+        id: wrappers.length + 1,
+        kind: wrapperKind ?? 'ice',
+        min: {
+          x: Math.round(c.x - e.x + 0.5),
+          y: Math.round(c.y - e.y + 0.5),
+          z: Math.round(c.z - e.z + 0.5),
+        },
+        max: {
+          x: Math.round(c.x + e.x - 0.5),
+          y: Math.round(c.y + e.y - 0.5),
+          z: Math.round(c.z + e.z - 0.5),
+        },
+        hp: wrap.hp,
+      });
+    }
+    wrap = undefined;
+  };
 
   for (const line of lines) {
     if (inLayers) {
@@ -277,9 +399,44 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
         }
         if (/^    - \{/.test(line) && layer) {
           const pos = readVec3(line);
-          if (pos) layer.voxelPositions.push(pos);
+          // Toạ độ file -> toạ độ editor: lật lại đúng phép lật lúc ghi, nên nhập lại file vừa xuất
+          // là ra y nguyên level cũ. Xem `flipDepthVec`.
+          if (pos) layer.voxelPositions.push(flipDepthVec(pos));
           continue;
         }
+        continue;
+      }
+    }
+
+    if (wrapperKind) {
+      if (/^  \S/.test(line) && !/^  - /.test(line)) {
+        flushWrapper();
+        wrapperKind = null;
+      } else {
+        if (/^  - bounds:\s*$/.test(line)) {
+          flushWrapper();
+          wrap = { hp: DEFAULT_WRAPPER_HP };
+          continue;
+        }
+        if (wrap) {
+          const center = /^      m_Center:\s*(.*)$/.exec(line);
+          if (center) {
+            wrap.center = readVec3(center[1]);
+            continue;
+          }
+          const extent = /^      m_Extent:\s*(.*)$/.exec(line);
+          if (extent) {
+            wrap.extent = readVec3(extent[1]);
+            continue;
+          }
+          const hp = /^    hp:\s*(-?\d+)/.exec(line);
+          if (hp) {
+            wrap.hp = Number(hp[1]);
+            continue;
+          }
+        }
+        // hpTexts và innerVoxelPositions không cần đọc: tool tính lại từ hộp + grid lúc xuất, nên
+        // đọc vào chỉ để đó rồi lệch với thực tế khi người dùng sửa khối.
         continue;
       }
     }
@@ -313,6 +470,14 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
 
     if (/^  layers:\s*$/.test(line)) {
       inLayers = true;
+      continue;
+    }
+    if (/^  iceWrapperData:\s*$/.test(line)) {
+      wrapperKind = 'ice';
+      continue;
+    }
+    if (/^  shieldData:\s*$/.test(line)) {
+      wrapperKind = 'shield';
       continue;
     }
     if (/^  blasters:\s*$/.test(line)) {
@@ -357,7 +522,6 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
   // Các mảng cơ chế được ghi kèm nhưng tool chưa dựng được. Nói ra ngay lúc nhập, vì nếu xuất đè
   // lên chính file này thì chúng biến mất không dấu vết.
   const dropped = [
-    'iceWrapperData',
     'largeVoxelData',
     'doubleLargeVoxelData',
     'giftWrapperData',
@@ -365,7 +529,6 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
     'shrinkingCoverData',
     'bombData',
     'colorBoxData',
-    'shieldData',
     'flyingPiggyData',
   ].filter((key) => lines.some((l) => l.startsWith(`  ${key}:`) && !l.endsWith('[]')));
   if (dropped.length) {
@@ -382,5 +545,8 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
     );
   }
 
-  return { meta, layers, shooters: { blasters, dockColumns }, warnings };
+  // Dòng cuối file có thể kết thúc ngay sau một lớp bọc — chốt phần đang đọc dở.
+  flushWrapper();
+
+  return { meta, layers, shooters: { blasters, dockColumns }, wrappers, warnings };
 }
