@@ -8,6 +8,7 @@ import { Marquee2D } from './Marquee2D';
 import { MarqueeOverlay } from './MarqueeOverlay';
 import { PickHighlight } from './PickHighlight';
 import { WrapperBoxes } from './WrapperBoxes';
+import { WrapperPlace } from './WrapperPlace';
 import { VoxelEdges } from './VoxelEdges';
 import { Ground } from './Ground';
 import { HoverPreview } from './HoverPreview';
@@ -38,7 +39,7 @@ export function EditorScene() {
   return (
     // Con trỏ chữ thập ở chế độ chọn 2D: chuột trái ở đây là kéo khung, không phải xoay camera —
     // đổi con trỏ là cách nói điều đó mà không cần đọc gợi ý.
-    <div className={`canvas-wrap${mode === 'select2d' ? ' picking' : ''}`}>
+    <div className={`canvas-wrap${mode === 'select2d' || mode === 'wrapper' ? ' picking' : ''}`}>
       <Canvas
         // Scene dựng theo Z-up để trùng hệ trục của LevelData: toạ độ một khối trong editor chính
         // là toạ độ trong file .asset, không phải quy đổi ở đâu cả. OrbitControls đọc camera.up
@@ -64,7 +65,8 @@ export function EditorScene() {
         <RegionPreview />
         <SelectionBox />
         <PickHighlight />
-        <WrapperBoxes />
+        <WrapperBoxes onHover={setHoverDedup} />
+        <WrapperPlace />
         <DragFill />
         <Marquee2D />
         <CenterGizmo />

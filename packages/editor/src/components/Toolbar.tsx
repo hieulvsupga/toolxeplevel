@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { WALL_HEX } from '@voxel/core';
+import { WALL_HEX, WRAPPER_KINDS } from '@voxel/core';
 import { useEditor } from '../store';
 import { PaletteSwatches } from './PaletteSwatches';
 import { PalettePanel } from './PalettePanel';
@@ -31,8 +31,10 @@ export function Toolbar() {
   const wrappers = useEditor((s) => s.wrappers);
   const wrapperCount = wrappers.length;
   const iceCount = wrappers.filter((w) => w.kind === 'ice').length;
-  const shieldCount = wrapperCount - iceCount;
+  const largeCount = wrapperCount - iceCount;
   const showWrappers = useEditor((s) => s.showWrappers);
+  const wrapperBrush = useEditor((s) => s.wrapperBrush);
+  const setWrapperBrush = useEditor((s) => s.setWrapperBrush);
   const toggleShowWrappers = useEditor((s) => s.toggleShowWrappers);
 
   const wallCount = useMemo(() => {
@@ -154,6 +156,21 @@ export function Toolbar() {
         >
           ⬚ Chọn
         </button>
+        {/* Đặt lớp bọc: mỗi loại một nút, khỏi cần cả một bảng thông số riêng. Cỡ hộp do cú KÉO
+            quyết định, còn hp / màu sửa ngay trên dòng trong bảng 🧊 góc dưới-trái. */}
+        {WRAPPER_KINDS.map((k) => (
+          <button
+            key={k.kind}
+            className={mode === 'wrapper' && wrapperBrush.kind === k.kind ? 'active' : ''}
+            onClick={() => {
+              setWrapperBrush({ kind: k.kind });
+              setMode('wrapper');
+            }}
+            title={`Đặt ${k.label} (W): bấm ra một hộp 1 ô, giữ và kéo thì hộp dài ra theo hướng kéo (giữ thêm Ctrl để kéo chiều vuông góc). hp / màu sửa ở bảng 🧊 góc dưới-trái.`}
+          >
+            {k.icon}
+          </button>
+        ))}
         <button
           className={mode === 'select2d' ? 'active' : ''}
           onClick={() => setMode('select2d')}
@@ -231,8 +248,8 @@ export function Toolbar() {
         </button>
         {/* Bật/ẩn bảng lớp bọc ở góc dưới-trái.
 
-            Icon theo LOẠI đang có trong level (băng / shield / cả hai): một icon 🧊 cứng thì sai
-            khi level toàn shield. Số lượng để trong tooltip — nhìn bảng lớp bọc là thấy đủ. Xám
+            Icon theo LOẠI đang có trong level (băng / khối lớn / cả hai): một icon 🧊 cứng thì
+            sai khi level toàn khối lớn. Số lượng để trong tooltip — nhìn bảng lớp bọc là thấy đủ. Xám
             khi chưa có lớp nào, lúc đó tooltip nói luôn cách tạo. */}
         <button
           className={`tb-icon${showWrappers && wrapperCount ? ' active' : ''}`}
@@ -240,15 +257,15 @@ export function Toolbar() {
           disabled={!wrapperCount}
           title={
             wrapperCount
-              ? `Lớp bọc: ${iceCount} băng, ${shieldCount} shield — bấm để ẩn/hiện bảng ở góc dưới-trái`
-              : 'Lớp bọc: chọn một hộp bằng ⬚ Chọn rồi bấm “🧊 Băng” hoặc “🛡 Shield” trong bảng vùng chọn'
+              ? `Lớp bọc: ${iceCount} băng, ${largeCount} khối lớn — bấm để ẩn/hiện bảng ở góc dưới-trái`
+              : 'Lớp bọc: chọn một hộp bằng ⬚ Chọn rồi bấm “🧊 Băng” hoặc “🟪 Khối lớn” trong bảng vùng chọn'
           }
         >
-          {!wrapperCount || (iceCount > 0 && shieldCount > 0)
-            ? '🧊🛡'
+          {!wrapperCount || (iceCount > 0 && largeCount > 0)
+            ? '🧊🟪'
             : iceCount > 0
               ? '🧊'
-              : '🛡'}
+              : '🟪'}
         </button>
       </div>
 

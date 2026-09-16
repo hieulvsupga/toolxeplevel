@@ -44,6 +44,8 @@ export function App() {
         s.setMode('select');
       } else if (e.key.toLowerCase() === 'd') {
         s.setMode('select2d');
+      } else if (e.key.toLowerCase() === 'w') {
+        s.setMode('wrapper');
       }
     };
     window.addEventListener('keydown', onKey);
@@ -64,7 +66,7 @@ export function App() {
       <div className="hint">
         <b>Chuột trái</b>: đặt/kéo khối ngang, <b>+Ctrl</b>: nâng/hạ chiều cao &nbsp;•&nbsp;
         giữ <b>X</b>: xóa, giữ <b>C</b>: hút màu &nbsp;•&nbsp;
-        <b>B / E / P / S / D</b>: đặt / xóa / sơn / chọn vùng / chọn 2D &nbsp;•&nbsp;
+        <b>B / E / P / S / D / W</b>: đặt / xóa / sơn / chọn vùng / chọn 2D / đặt lớp bọc &nbsp;•&nbsp;
         <b>Space/Alt + trái</b> hoặc <b>chuột phải</b>: xoay, <b>Shift + trái</b>: pan,
         <b>lăn</b>: zoom &nbsp;•&nbsp; <b>R</b>: reset, <b>F</b>: toàn cảnh &nbsp;•&nbsp;
         <b>Ctrl+Z / Y</b>: undo / redo &nbsp;•&nbsp; <b>Esc</b>: huỷ kéo &nbsp;•&nbsp;

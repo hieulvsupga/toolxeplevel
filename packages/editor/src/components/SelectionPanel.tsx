@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { WRAPPER_KINDS } from '@voxel/core';
 import { useEditor } from '../store';
 import { AXIS_X, AXIS_Y, AXIS_Z } from './axisColors';
@@ -190,6 +190,15 @@ export function SelectionPanel() {
     [pick, boxRegion, version],
   );
 
+  /**
+   * Lớp bọc dựng ra ôm theo HÌNH KHỐI hay lấy CẢ HỘP.
+   *
+   * Mặc định bám khối: đó là cách data thật dựng mấy hình không phải hộp (Level_79 là quả cầu, chứ
+   * không phải hộp 8×8×8 chứa quả cầu). Vẫn để chuyển sang cả hộp vì phần lớn level dùng hộp đặc, và
+   * khối lớn thì nhiều khi muốn một cục vuông chằn chặn kể cả chỗ đang trống.
+   */
+  const [hugShape, setHugShape] = useState(true);
+
   // Đổi sang công cụ khác thì bỏ khung chọn: để lại một cái khung cam lửng lơ trong
   // lúc đang đặt khối chỉ gây hiểu lầm. Clipboard thì giữ, vẫn dán được.
   useEffect(() => {
@@ -374,21 +383,49 @@ export function SelectionPanel() {
         </div>
       </div>
 
-      {/* Bọc cụm đang chọn: hộp vùng chọn CHÍNH LÀ `bounds` của lớp bọc, nên không cần công cụ
-          riêng — kéo hộp như thường rồi bấm. */}
+      {/* Bọc cụm đang chọn: không cần công cụ riêng — quét vùng như thường rồi bấm. */}
       <div className="sel-group">
-        <span className="sel-group-name" title="Tạo lớp vỏ hộp quanh hộp chọn — phải phá vỏ mới bắn được khối bên trong">
+        <span
+          className="sel-group-name"
+          title="Biến cụm đang chọn thành lớp bọc — phải phá vỏ mới bắn được khối bên trong"
+        >
           Bọc cụm đang chọn
         </span>
+        <div className="sel-rots sel-hug">
+          <button
+            className={hugShape ? 'on' : ''}
+            onClick={() => setHugShape(true)}
+            title={
+              `Bám khối: lớp bọc ôm ĐÚNG ${filled} ô đang có khối, ô trống trong hộp không tính. ` +
+              `Dựng được hình bất kỳ — quả cầu, vỏ rỗng, hình chữ L. Hộp bao vẫn tự tính để ghi bounds.`
+            }
+          >
+            ⬚ Bám khối
+          </button>
+          <button
+            className={hugShape ? '' : 'on'}
+            onClick={() => setHugShape(false)}
+            title="Cả hộp: lớp bọc lấy trọn hộp chọn, kể cả ô đang trống — kiểu hộp đặc như trước."
+          >
+            ⬛ Cả hộp
+          </button>
+        </div>
         <div className="sel-rots">
           {WRAPPER_KINDS.map((k) => (
             <button
               key={k.kind}
               disabled={!filled}
               onClick={() => {
+                if (!filled) return;
+                const store = useEditor.getState();
+                if (hugShape) {
+                  const cells = activeCells().map(([x, y, z]) => ({ x, y, z }));
+                  store.addWrapperFromCells(k.kind, cells);
+                  return;
+                }
                 const r = activeRegion();
-                if (!r || !filled) return;
-                useEditor.getState().addWrapper(
+                if (!r) return;
+                store.addWrapper(
                   k.kind,
                   { x: r.min[0], y: r.min[1], z: r.min[2] },
                   { x: r.max[0], y: r.max[1], z: r.max[2] },
@@ -396,10 +433,12 @@ export function SelectionPanel() {
               }}
               title={
                 !filled
-                  ? 'Hộp chọn không có khối nào để bọc'
-                  : `Bọc ${k.label}: vỏ hộp quanh hộp chọn, phải phá vỏ mới bắn được khối bên trong. ` +
+                  ? 'Vùng chọn không có khối nào để bọc'
+                  : `Bọc ${k.label} ${hugShape ? `ôm đúng ${filled} ô có khối` : 'trọn hộp chọn'}. ` +
                     `hp sửa ở danh sách lớp bọc góc dưới-trái.` +
-                    (k.v1 ? '' : ' — LƯU Ý: gameplay V1 chưa đọc shieldData, xuất ra game chưa có tác dụng.')
+                    (k.v1
+                      ? ''
+                      : ` — LƯU Ý: gameplay V1 chưa đọc ${k.field}, xuất ra game chưa có tác dụng.`)
               }
             >
               {k.icon} {k.label}

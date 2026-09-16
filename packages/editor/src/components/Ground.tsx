@@ -76,15 +76,19 @@ export function Ground({ onHover }: GroundProps) {
           // Tới được đây nghĩa là tia không trúng khối nào (khối gần hơn sẽ chặn sự kiện lại),
           // nên chắc chắn không còn khối nào đang được trỏ.
           useHoverBlock.getState().setBlock(null);
-          if (mode !== 'place' && mode !== 'select') {
+          // Chế độ đặt lớp bọc cũng cần ô đích trên sàn (đặt khối lớn xuống chỗ trống).
+          if (mode !== 'place' && mode !== 'select' && mode !== 'wrapper') {
             onHover(null);
             return;
           }
           onHover(toCell(e));
+          // Sàn: mặt ngửa lên (hoặc úp xuống khi camera ở dưới sàn) — xem `layerZ`.
+          useHoverBlock.getState().setTargetNormal([0, 0, layerZ() === 0 ? 1 : -1]);
         }}
         onPointerOut={() => {
           onHover(null);
           useHoverBlock.getState().setBlock(null);
+          useHoverBlock.getState().setTargetNormal(null);
         }}
       >
         {/* planeGeometry nằm sẵn trong mặt XY — đúng mặt sàn của scene Z-up, khỏi xoay. */}

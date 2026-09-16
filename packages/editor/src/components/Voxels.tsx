@@ -7,6 +7,7 @@ import { useLayers } from '../lib/useLayers';
 import { brickMaps, brickShade } from '../lib/brickTexture';
 import { beginDragFace, useDrag } from './dragStore';
 import { useHoverBlock } from './hoverStore';
+import { useCellFocus } from './WrapperCellsPanel';
 import { useInput } from './input';
 
 const tmpMatrix = new THREE.Matrix4();
@@ -156,7 +157,9 @@ function VoxelChunk({
     const [cx, cy, cz] = cellsRef.current[e.instanceId];
     const { erase, pick } = useInput.getState();
     // Xóa/sơn/hút màu nhắm vào chính khối; đặt nhắm vào ô áp mặt.
-    if (erase || pick || mode !== 'place') return [cx, cy, cz];
+    // Chế độ đặt và chế độ đặt-lớp-bọc đều nhắm vào ô ÁP MẶT (chỗ khối mới sẽ nằm), các chế độ
+    // còn lại nhắm chính khối đang trỏ.
+    if (erase || pick || (mode !== 'place' && mode !== 'wrapper')) return [cx, cy, cz];
     const n = e.face.normal;
     return [cx + Math.round(n.x), cy + Math.round(n.y), cz + Math.round(n.z)];
   };
@@ -174,9 +177,17 @@ function VoxelChunk({
       if (v) useEditor.getState().setColor(v.color);
       return;
     }
-    // Chọn 2D không kéo theo mặt khối: khung của nó do `Marquee2D` bắt ngay trên canvas, còn bắt
-    // đầu một cú kéo ở đây thì lúc thả `DragFill` không hiểu chế độ này và rơi vào nhánh ĐẶT khối.
-    if (mode === 'select2d') return;
+    // Đang soi riêng một lớp bọc: chuột trái là CHỌN ô đó trong bảng liệt kê, không phải thao tác
+    // của công cụ đang cầm. Lúc này màn hình chỉ còn khối của lớp bọc — bấm vào đó mà lại đặt/xoá
+    // khối thì vừa lạc lõng vừa dễ phá nhầm chính cụm đang soi.
+    if (useEditor.getState().isolateWrapper !== null) {
+      useCellFocus.getState().setPicked({ x: cell[0], y: cell[1], z: cell[2] });
+      return;
+    }
+    // Hai chế độ này không kéo theo mặt khối: chúng bắt `pointerdown` thẳng trên canvas
+    // (`Marquee2D` / `WrapperPlace`), còn bắt đầu một cú kéo ở đây thì lúc thả `DragFill` không
+    // hiểu chế độ và rơi vào nhánh ĐẶT khối.
+    if (mode === 'select2d' || mode === 'wrapper') return;
     // Bắt đầu kéo từ mặt khối; thả chuột (DragFill) mới fill cả vùng.
     beginDragFace(cell, e.face.normal, erase ? 'remove' : mode);
   };
@@ -196,6 +207,13 @@ function VoxelChunk({
     if (cell) {
       e.stopPropagation();
       onHover(cell);
+      // Mặt đang trỏ — công cụ đặt lớp bọc dùng nó làm mặt phẳng kéo.
+      const n = e.face?.normal;
+      useHoverBlock
+        .getState()
+        .setTargetNormal(
+          n ? [Math.round(n.x), Math.round(n.y), Math.round(n.z)] : null,
+        );
     }
   };
 

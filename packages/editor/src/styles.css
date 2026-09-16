@@ -3173,6 +3173,26 @@ body,
   gap: 4px;
 }
 
+/* Số ô của lớp bọc hình riêng, dính ngay sau cỡ hộp bao — nhạt hơn để không tranh chỗ với cỡ. */
+.wrap-shape {
+  color: #8a8a95;
+  margin-left: 1px;
+}
+
+/* Cặp nút chọn kiểu bọc: là lựa chọn nhị phân nên nút đang chọn phải sáng hẳn lên, khác với mấy
+   nút bấm-rồi-thôi cạnh đó. */
+.sel-hud .sel-hug button {
+  flex: 1;
+  padding: 3px 4px;
+  font-size: 11px;
+}
+
+.sel-hud .sel-hug button.on {
+  background: #3b4a64;
+  color: #dfe7f5;
+  border-color: #5b7099;
+}
+
 /* Một nhóm nút theo trục: nhãn trên dòng riêng, 6 nút chia đều bề ngang panel bên dưới. */
 .sel-group {
   display: flex;
@@ -3216,6 +3236,125 @@ body,
 }
 
 /* ---------- Danh sách lớp bọc (góc dưới-trái) ---------- */
+/* Bảng liệt kê ô: bung ra BÊN PHẢI danh sách lớp bọc, không đè lên nó — mở bảng ra vẫn phải thấy
+   mình đang mở của dòng nào, và còn bấm sang dòng khác được. */
+.wrap-cells {
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 0;
+  width: 236px;
+  max-height: 68vh;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: rgba(28, 28, 34, 0.96);
+  border: 1px solid #34556b;
+  border-radius: 8px;
+  padding: 6px;
+  font-size: 12px;
+}
+
+.wrap-cells-bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #a8a8b4;
+}
+
+.wrap-cells-bar label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+
+.wrap-cells-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.wrap-cell-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.wrap-cell-row:hover {
+  background: #2f3a4a;
+}
+
+/* Dòng của khối vừa bấm trong scene — phải nổi hơn hẳn hover, vì bảng tự cuộn tới nó và mắt cần
+   bắt được ngay chỗ vừa nhảy đến. */
+.wrap-cell-row.picked {
+  background: #3b4a64;
+  box-shadow: inset 0 0 0 1px #6f8ab8;
+}
+
+.wrap-cells-solo.on {
+  color: #9fd0ff;
+  background: #2a3a4a;
+}
+
+/* Ô đã gỡ khỏi lớp bọc: mờ hẳn đi để lướt mắt là thấy hình còn lại những ô nào. */
+.wrap-cell-row.off {
+  opacity: 0.45;
+}
+
+.wrap-cell-pos {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+  color: #c9c9d2;
+}
+
+.wrap-cell-chip {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid #00000060;
+  flex: none;
+}
+
+.wrap-cell-name {
+  width: 56px;
+  color: #8a8a95;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wrap-cells-none {
+  color: #8a8a95;
+  padding: 6px 4px;
+}
+
+.wrap-cells-note {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: #8a8a95;
+  border-top: 1px solid #2e2e38;
+  padding-top: 5px;
+}
+
+.wrap-cells-open {
+  flex: none;
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 4px;
+  border-radius: 4px;
+  color: #6a6a75;
+}
+
+.wrap-cells-open:hover {
+  color: #9fd0ff;
+  background: #2a3a4a;
+}
+
 .wrap-list {
   position: fixed;
   left: 10px;
@@ -3312,4 +3451,15 @@ body,
   font-size: 13px;
   line-height: 1;
   padding: 2px 3px;
+}
+
+/* Ô chọn màu của khối lớn trong danh sách lớp bọc. */
+.wrap-color {
+  flex: 1;
+  min-width: 0;
+  background: #22222a;
+  border: 1px solid #3c3c46;
+  border-radius: 5px;
+  padding: 2px 3px;
+  font-size: 11px;
 }

@@ -16,6 +16,15 @@ interface HoverStore {
    */
   target: Cell | null;
   setTarget: (cell: Cell | null) => void;
+  /**
+   * Pháp tuyến của MẶT đang trỏ (đã làm tròn về ±1 một trục), hoặc null khi không trỏ vào đâu.
+   *
+   * Công cụ đặt lớp bọc cần nó để biết kéo trên MẶT PHẲNG nào: bấm trên sàn thì kéo trong mặt XY,
+   * bấm vào sườn một khối thì kéo trong mặt đứng — nhờ vậy kéo hướng nào hộp dài ra hướng đó mà
+   * không phải giữ thêm phím nào.
+   */
+  targetNormal: Cell | null;
+  setTargetNormal: (n: Cell | null) => void;
 }
 
 function sameCell(a: Cell | null, b: Cell | null): boolean {
@@ -47,4 +56,7 @@ export const useHoverBlock = create<HoverStore>((set) => ({
   setBlock: (block) => set((s) => (same(s.block, block) ? s : { block })),
   target: null,
   setTarget: (target) => set((s) => (sameCell(s.target, target) ? s : { target })),
+  targetNormal: null,
+  setTargetNormal: (targetNormal) =>
+    set((s) => (sameCell(s.targetNormal, targetNormal) ? s : { targetNormal })),
 }));

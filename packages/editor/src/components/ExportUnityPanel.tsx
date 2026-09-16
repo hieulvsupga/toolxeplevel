@@ -4,10 +4,12 @@ import {
   DEFAULT_LEVEL_META,
   MAX_DOCK_COUNT,
   WALL_COLOR_ID,
-  blockCountsByColorFromLayers,
   buildLayers,
   buildWrapperEntries,
+  gridForExport,
   gameColorById,
+  recenterOffset,
+  shootableCountsByColor,
   toFileSpaceLayers,
   toUnityAsset,
   validateShooters,
@@ -67,12 +69,37 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
   const centerOverride = useEditor((s) => s.centerOverride);
   const blasters = useEditor((s) => s.blasters);
   const dockColumns = useEditor((s) => s.dockColumns);
+
   const wrappers = useEditor((s) => s.wrappers);
 
-  const built = useMemo(
-    () => buildLayers(grid, { recenter, centerOverride }),
+  /**
+   * Gốc dời tâm tính MỘT LẦN từ grid đầy đủ, rồi ép cho cả `layers` lẫn lớp bọc dùng chung.
+   *
+   * Không được để hai bên tự tính: `layers` dựng từ grid ĐÃ BỎ các ô bị khối lớn nuốt, hộp bao của
+   * nó có thể nhỏ hơn grid thật, nên tâm tự tính sẽ lệch — và lệch thì trong file lớp bọc trôi khỏi
+   * cụm khối nó bọc.
+   */
+  const offset = useMemo(
+    () => recenterOffset(grid, recenter, centerOverride),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [grid, version, recenter, centerOverride],
+  );
+  const centerForBuild = recenter ? offset : null;
+
+  /**
+   * Grid để ghi `layers`: bỏ các ô nằm trong lớp bọc KHỐI LỚN — khối lớn là một cục thay cho cả cụm
+   * nhỏ, data thật của game cũng không còn các ô đó trong layers. Xem `gridForExport`.
+   */
+  const exportGrid = useMemo(
+    () => gridForExport(grid, wrappers),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [grid, version, wrappers],
+  );
+
+  const built = useMemo(
+    () => buildLayers(exportGrid, { recenter, centerOverride: centerForBuild }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [exportGrid, version, recenter, centerForBuild],
   );
 
   // Áp depth ép tay rồi sắp lại. Mỗi dòng giữ luôn `autoKey` (depth tự động gốc) vì sắp lại làm
@@ -108,18 +135,20 @@ export function ExportUnityPanel({ onClose }: ExportUnityPanelProps) {
     () =>
       validateShooters(
         { blasters, dockColumns },
-        blockCountsByColorFromLayers(layers),
+        // Cùng cách đếm với bảng Blaster: khối lớn tính bằng hp, không phải số voxel bị nuốt.
+        shootableCountsByColor(grid, wrappers),
         meta.dockCount,
       ),
-    [blasters, dockColumns, layers, meta.dockCount],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [blasters, dockColumns, grid, version, wrappers, meta.dockCount],
   );
 
   /** Lớp bọc + phần soát của chúng. `innerVoxelPositions`/`hpTexts` tính từ grid ngay tại đây. */
   const wrapperEntries = useMemo(
-    // Cùng `recenter`/`centerOverride` với `built` ở trên — xem `buildWrapperEntries`.
-    () => buildWrapperEntries(grid, wrappers, { recenter, centerOverride }),
+    // Cùng gốc dời tâm với `built` ở trên — xem `offset`.
+    () => buildWrapperEntries(grid, wrappers, { recenter, centerOverride: centerForBuild }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [grid, version, wrappers, recenter, centerOverride],
+    [grid, version, wrappers, recenter, centerForBuild],
   );
   const wrapperProblems = useMemo(
     () => validateWrappers(grid, wrappers),

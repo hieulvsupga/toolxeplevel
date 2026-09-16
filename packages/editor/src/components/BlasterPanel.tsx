@@ -7,12 +7,12 @@ import {
   BLASTER_TYPE_NORMAL,
   GAME_COLORS,
   WALL_COLOR_ID,
-  blockCountsByColor,
   checkWinnable,
   colorBalance,
   dockPositionOf,
   gameColorById,
   rateDifficulty,
+  shootableCountsByColor,
   type DifficultyReport,
   type SolveResult,
 } from '@voxel/core';
@@ -115,7 +115,8 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
   const toggleBlasterConnection = useEditor((s) => s.toggleBlasterConnection);
   const levelMeta = useEditor((s) => s.levelMeta);
   const setLevelMeta = useEditor((s) => s.setLevelMeta);
-  const wrapperCount = useEditor((s) => s.wrappers.length);
+  const wrappers = useEditor((s) => s.wrappers);
+  const wrapperCount = wrappers.length;
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [bulletsPerBlaster, setBulletsPerBlaster] = useState(40);
@@ -148,10 +149,14 @@ export function BlasterPanel({ onClose }: BlasterPanelProps) {
   const chipRefs = useRef(new Map<number, HTMLElement>());
   const [linkLines, setLinkLines] = useState<LinkLine[]>([]);
 
+  /**
+   * Số khối từng màu mà đạn phải khớp — KHÔNG phải số voxel thuần: khối lớn nuốt voxel bên trong và
+   * chỉ tốn `hp` viên. Xem `shootableCountsByColor`.
+   */
   const blockCounts = useMemo(
-    () => blockCountsByColor(grid),
+    () => shootableCountsByColor(grid, wrappers),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [grid, version],
+    [grid, version, wrappers],
   );
 
   const balance = useMemo(() => colorBalance(blockCounts, blasters), [blockCounts, blasters]);

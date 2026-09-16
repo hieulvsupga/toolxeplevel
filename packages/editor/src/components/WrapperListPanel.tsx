@@ -1,7 +1,16 @@
 import { useMemo, useState } from 'react';
-import { validateWrappers, wrapperInnerCells, wrapperKindInfo, wrapperSize } from '@voxel/core';
+import {
+  GAME_COLORS,
+  WALL_COLOR_ID,
+  gameColorById,
+  validateWrappers,
+  wrapperFilledCount,
+  wrapperKindInfo,
+  wrapperSize,
+} from '@voxel/core';
 import { useEditor } from '../store';
 import { useSelection } from './selectionStore';
+import { WrapperCellsPanel } from './WrapperCellsPanel';
 
 /**
  * Danh sách LỚP BỌC (góc dưới-trái). Mỗi dòng là một hộp: cỡ hộp, số khối bên trong, hp sửa ngay
@@ -17,6 +26,7 @@ export function WrapperListPanel() {
   const version = useEditor((s) => s.version);
   const updateWrapper = useEditor((s) => s.updateWrapper);
   const removeWrapper = useEditor((s) => s.removeWrapper);
+  const setWrapperBrush = useEditor((s) => s.setWrapperBrush);
   const showWrappers = useEditor((s) => s.showWrappers);
   const toggleShowWrappers = useEditor((s) => s.toggleShowWrappers);
   const focused = useEditor((s) => s.focusedWrapper);
@@ -27,13 +37,15 @@ export function WrapperListPanel() {
    * dòng đã bấm — không có cái chốt này thì vừa đưa chuột đi là hết sáng, đúng lúc muốn nhìn.
    */
   const [sticky, setSticky] = useState<number | null>(null);
+  /** Lớp bọc đang mở bảng liệt kê ô. Mỗi lần một cái — mở hai bảng cùng lúc chỉ chật góc màn hình. */
+  const [listing, setListing] = useState<number | null>(null);
 
   const rows = useMemo(
     () =>
       wrappers.map((w) => ({
         w,
         size: wrapperSize(w),
-        inner: wrapperInnerCells(grid, w).length,
+        inner: wrapperFilledCount(grid, w),
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [wrappers, grid, version],
@@ -42,7 +54,7 @@ export function WrapperListPanel() {
   const counts = useMemo(
     () => ({
       ice: wrappers.filter((w) => w.kind === 'ice').length,
-      shield: wrappers.filter((w) => w.kind === 'shield').length,
+      large: wrappers.filter((w) => w.kind === 'largeVoxel').length,
     }),
     [wrappers],
   );
@@ -62,11 +74,13 @@ export function WrapperListPanel() {
       <div className="layer-head">
         <span>
           {counts.ice > 0 && `🧊 ${counts.ice}`}
-          {counts.ice > 0 && counts.shield > 0 && ' · '}
-          {counts.shield > 0 && `🛡 ${counts.shield}`} lớp bọc
+          {counts.ice > 0 && counts.large > 0 && ' · '}
+          {counts.large > 0 && `🟪 ${counts.large}`} lớp bọc
         </span>
         <span className="legend-head-actions">
-          {problems.length > 0 && (
+          {listing !== null && <WrapperCellsPanel id={listing} onClose={() => setListing(null)} />}
+
+      {problems.length > 0 && (
             <span className="wrap-warn" title={problems.join('\n')}>
               ⚠ {problems.length}
             </span>
@@ -110,26 +124,58 @@ export function WrapperListPanel() {
             >
               ⬚
             </button>
-            <button
-              className="link-btn wrap-kind"
-              onClick={(e) => {
-                e.stopPropagation();
-                // Đổi loại tại chỗ: hai loại cùng một khuôn data nên đổi qua lại không mất gì, và
-                // dựng nhầm loại thì khỏi phải xoá đi bọc lại.
-                updateWrapper(w.id, { kind: w.kind === 'ice' ? 'shield' : 'ice' });
-              }}
-              title={`${wrapperKindInfo(w.kind).label} — bấm để đổi sang ${
-                w.kind === 'ice' ? 'Shield' : 'Băng'
-              }`}
-            >
+            {/* Icon loại chỉ để NHÌN, không bấm được: nó nằm ngay cạnh mấy nút khác nên rất dễ
+                bấm nhầm, mà bấm nhầm là lớp bọc đổi hẳn loại — băng thành khối lớn thì cụm khối
+                bên trong biến mất khỏi layers và bảng đạn nhảy số. Đổi loại thì xoá đi bọc lại. */}
+            <span className="wrap-kind" title={wrapperKindInfo(w.kind).label}>
               {wrapperKindInfo(w.kind).icon}
-            </button>
-            <span className="wrap-size">
+            </span>
+            {/* Hình riêng thì phải nói ra: cỡ hộp bao một mình nó không tả đúng lớp bọc nữa —
+                8×8×8 có thể là cục vuông 512 ô mà cũng có thể là quả cầu 416 ô. */}
+            <span
+              className="wrap-size"
+              title={
+                w.cells
+                  ? `Hộp bao ${size.x}×${size.y}×${size.z}, hình riêng ${w.cells.length}/${
+                      size.x * size.y * size.z
+                    } ô`
+                  : `Hộp đặc ${size.x}×${size.y}×${size.z}`
+              }
+            >
               {size.x}×{size.y}×{size.z}
+              {w.cells && <span className="wrap-shape">·{w.cells.length}</span>}
             </span>
-            <span className="wrap-inner" title={`${inner} khối nằm trong hộp`}>
-              {inner} khối
-            </span>
+            {/* Khối lớn mang đúng MỘT màu, nên chỗ này là ô chọn màu thay cho số khối (số khối
+                chuyển vào tooltip). Băng thì không có field màu. */}
+            {wrapperKindInfo(w.kind).hasColor ? (
+              <select
+                className="wrap-color"
+                value={w.color ?? 1}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  const color = Number(e.target.value);
+                  updateWrapper(w.id, { color });
+                  // Nhớ luôn làm màu cho lần đặt sau: bỏ bảng thông số rồi nên đây là chỗ duy nhất
+                  // chọn màu — đổi một cái rồi đặt tiếp là ra đúng màu đó, khỏi sửa từng dòng.
+                  setWrapperBrush({ color });
+                }}
+                title={`Màu của khối lớn · ${inner} khối nằm trong hộp`}
+                style={{ color: gameColorById(w.color ?? 1)?.hex }}
+              >
+                {/* Mỗi dòng mang đúng màu của nó: đặt màu ở thẻ select thôi thì cả danh sách đổ ra
+                    đều một màu — màu đang chọn — nên mở ra chẳng phân biệt được dòng nào là dòng
+                    nào. */}
+                {GAME_COLORS.filter((c) => c.id !== WALL_COLOR_ID).map((c) => (
+                  <option key={c.id} value={c.id} style={{ color: c.hex, background: '#22222a' }}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="wrap-inner" title={`${inner} khối nằm trong hộp`}>
+                {inner} khối
+              </span>
+            )}
             <label
               className="wrap-hp"
               title="Số lần phá mới vỡ vỏ"
@@ -149,9 +195,25 @@ export function WrapperListPanel() {
               />
             </label>
             <button
+              className="link-btn wrap-cells-open"
+              onClick={(e) => {
+                e.stopPropagation();
+                const next = listing === w.id ? null : w.id;
+                setListing(next);
+                // Mở bảng thì chốt sáng luôn lớp bọc đó: đang soi từng ô của nó mà trong scene lại
+                // không biết nó nằm đâu thì bảng chẳng giúp được gì.
+                setSticky(next);
+                setFocused(next);
+              }}
+              title="Liệt kê từng ô bên trong — bỏ bớt ô để lớp bọc thành hình khác hộp"
+            >
+              ☰
+            </button>
+            <button
               className="link-btn layer-del"
               onClick={(e) => {
                 e.stopPropagation();
+                if (listing === w.id) setListing(null);
                 removeWrapper(w.id);
               }}
               title="Bỏ lớp bọc này (khối bên trong không bị xoá)"

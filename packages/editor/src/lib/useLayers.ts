@@ -3,6 +3,7 @@ import {
   VoxelGrid,
   buildLayers,
   gameColorById,
+  wrapperCellSet,
   type BuildLayersResult,
   type GameColor,
   type Vec3,
@@ -49,6 +50,8 @@ export function useLayers(): { rows: LayerRow[]; hiddenVoxels: Set<string> } {
   const version = useEditor((s) => s.version);
   const depthOverrides = useEditor((s) => s.depthOverrides);
   const hiddenLayers = useEditor((s) => s.hiddenLayers);
+  const wrappers = useEditor((s) => s.wrappers);
+  const isolate = useEditor((s) => s.isolateWrapper);
 
   const built = layersOf(grid, version);
 
@@ -70,10 +73,21 @@ export function useLayers(): { rows: LayerRow[]; hiddenVoxels: Set<string> } {
     [built, depthOverrides],
   );
 
-  const hiddenVoxels = useMemo(
-    () => hiddenSetOf(built, hiddenLayers),
-    [built, hiddenLayers],
-  );
+  const hiddenVoxels = useMemo(() => {
+    const hidden = hiddenSetOf(built, hiddenLayers);
+    // Soi riêng một lớp bọc: mọi khối KHÔNG thuộc nó bị ẩn. Nhét vào chung `hiddenVoxels` thay vì
+    // làm một đường lọc riêng, để mọi chỗ đang đọc tập này (khối, viền khối, bảng tô tầng) cùng ẩn
+    // một kiểu — thêm đường lọc riêng là kiểu gì cũng sót một chỗ.
+    const w = isolate === null ? null : wrappers.find((x) => x.id === isolate);
+    if (w) {
+      const keep = wrapperCellSet(w);
+      for (const { x, y, z } of grid.entries()) {
+        if (!keep.has(`${x},${y},${z}`)) hidden.add(VoxelGrid.key(x, y, z));
+      }
+    }
+    return hidden;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [built, hiddenLayers, isolate, wrappers, grid, version]);
 
   return { rows, hiddenVoxels };
 }

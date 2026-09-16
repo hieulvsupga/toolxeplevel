@@ -5,18 +5,21 @@ import {
   MAX_DOCK_COUNT,
   VoxelGrid,
   autoBuildSearch,
-  blockCountsByColor,
   fromJSON,
   gridBounds,
   gridFromLayers,
   makeBlaster,
   nextBlasterId,
   DEFAULT_WRAPPER_HP,
+  dominantColorId,
+  wrapperFromCells,
   nextWrapperId,
   parseUnityAsset,
+  shootableCountsByColor,
   subdivideGrid,
   toJSON,
   toggleConnection,
+  wrapperKindInfo,
   type AutoBuildOptions,
   type AutoBuildSearchResult,
   type BlasterEntry,
@@ -27,8 +30,21 @@ import {
   type Voxel,
 } from '@voxel/core';
 
-/** `select2d` = kéo khung trên màn hình rồi chọn các khối rơi vào khung (xem `Marquee2D`). */
-export type ToolMode = 'place' | 'remove' | 'paint' | 'select' | 'select2d';
+/**
+ * `select2d` = kéo khung trên màn hình rồi chọn các khối rơi vào khung (xem `Marquee2D`).
+ * `wrapper` = đặt lớp bọc như đặt khối: chọn sẵn cỡ/màu/hp rồi bấm phát nào ra hộp phát đó.
+ */
+export type ToolMode = 'place' | 'remove' | 'paint' | 'select' | 'select2d' | 'wrapper';
+
+/** Thông số của công cụ đặt lớp bọc — "khối tuỳ chỉnh" mà người dựng cầm sẵn trên tay. */
+export interface WrapperBrush {
+  kind: WrapperKind;
+  /** Cỡ hộp theo ô, mỗi trục ≥ 1. */
+  size: Vec3;
+  hp: number;
+  /** ColorType cho khối lớn. */
+  color: number;
+}
 
 type Cell = [number, number, number];
 
@@ -155,6 +171,9 @@ interface EditorState {
    */
   focusedWrapper: number | null;
   setFocusedWrapper: (id: number | null) => void;
+  /** Thông số công cụ đặt lớp bọc (chế độ `wrapper`). */
+  wrapperBrush: WrapperBrush;
+  setWrapperBrush: (patch: Partial<WrapperBrush>) => void;
   setLevelMeta: (meta: LevelMeta) => void;
   setDepthOverrides: (overrides: Record<string, number>) => void;
   setRecenter: (recenter: boolean) => void;
@@ -194,7 +213,18 @@ interface EditorState {
    */
   wrappers: BoxWrapper[];
   /** Thêm lớp bọc theo một hộp (thường là hộp vùng chọn). Trả về id vừa tạo. */
-  addWrapper: (kind: WrapperKind, min: Vec3, max: Vec3, hp?: number) => number;
+  addWrapper: (kind: WrapperKind, min: Vec3, max: Vec3, hp?: number, color?: number) => number;
+  /** Dựng lớp bọc ôm ĐÚNG những ô cho trước (hình bất kỳ); hộp bao tự tính. */
+  addWrapperFromCells: (kind: WrapperKind, cells: Vec3[], hp?: number, color?: number) => number | null;
+  /** Thay tập ô của một lớp bọc đang có; hộp bao tính lại theo tập ô mới. */
+  setWrapperCells: (id: number, cells: Vec3[]) => void;
+  /**
+   * Chỉ hiện khối thuộc lớp bọc này, ẩn hẳn mọi khối khác. `null` = xem bình thường.
+   *
+   * Chỉ là chuyện XEM cho dễ, không đụng tới data — giống hệt việc tắt layer.
+   */
+  isolateWrapper: number | null;
+  setIsolateWrapper: (id: number | null) => void;
   updateWrapper: (id: number, patch: Partial<Omit<BoxWrapper, 'id'>>) => void;
   removeWrapper: (id: number) => void;
   clearWrappers: () => void;
@@ -313,6 +343,14 @@ export const useEditor = create<EditorState>((set, get) => ({
   focusedWrapper: null,
   setFocusedWrapper: (focusedWrapper) =>
     set((s) => (s.focusedWrapper === focusedWrapper ? s : { focusedWrapper })),
+  // Mặc định 1×1×1: một ô đúng như mọi công cụ khác, muốn to hơn thì kéo hoặc gõ số.
+  wrapperBrush: {
+    kind: 'largeVoxel' as const,
+    size: { x: 1, y: 1, z: 1 },
+    hp: DEFAULT_WRAPPER_HP,
+    color: 1,
+  },
+  setWrapperBrush: (patch) => set((s) => ({ wrapperBrush: { ...s.wrapperBrush, ...patch } })),
   setLevelMeta: (levelMeta) => set({ levelMeta }),
   setDepthOverrides: (depthOverrides) => set({ depthOverrides }),
   setRecenter: (recenter) => set({ recenter }),
@@ -323,31 +361,63 @@ export const useEditor = create<EditorState>((set, get) => ({
   dockColumns: [],
   wrappers: [],
 
-  addWrapper: (kind, min, max, hp = DEFAULT_WRAPPER_HP) => {
+  addWrapper: (kind, min, max, hp = DEFAULT_WRAPPER_HP, pickedColor) => {
     const id = nextWrapperId(get().wrappers);
+    const box = {
+      id,
+      kind,
+      min: {
+        x: Math.min(min.x, max.x),
+        y: Math.min(min.y, max.y),
+        z: Math.min(min.z, max.z),
+      },
+      max: {
+        x: Math.max(min.x, max.x),
+        y: Math.max(min.y, max.y),
+        z: Math.max(min.z, max.z),
+      },
+      hp: Math.max(1, Math.floor(hp)),
+    };
+    // Khối lớn mang đúng một màu: chỗ gọi chỉ định (công cụ đặt cầm sẵn màu) thì theo, không thì
+    // lấy màu áp đảo trong hộp — vì nó là để THAY cả cụm nhỏ đó.
+    const color = wrapperKindInfo(kind).hasColor
+      ? (pickedColor ?? dominantColorId(get().grid, box))
+      : undefined;
     set((s) => ({
-      wrappers: [
-        ...s.wrappers,
-        {
-          id,
-          kind,
-          // Chuẩn hoá hai đầu: chỗ gọi truyền hộp vùng chọn, mà hộp đó có thể ngược đầu.
-          min: {
-            x: Math.min(min.x, max.x),
-            y: Math.min(min.y, max.y),
-            z: Math.min(min.z, max.z),
-          },
-          max: {
-            x: Math.max(min.x, max.x),
-            y: Math.max(min.y, max.y),
-            z: Math.max(min.z, max.z),
-          },
-          hp: Math.max(1, Math.floor(hp)),
-        },
-      ],
+      // `box` ở trên đã chuẩn hoá hai đầu: chỗ gọi truyền hộp vùng chọn, mà hộp đó có thể ngược đầu.
+      wrappers: [...s.wrappers, { ...box, ...(color === undefined ? null : { color }) }],
     }));
     return id;
   },
+
+  addWrapperFromCells: (kind, cells, hp = DEFAULT_WRAPPER_HP, pickedColor) => {
+    const id = nextWrapperId(get().wrappers);
+    const w = wrapperFromCells({ id, kind, hp: Math.max(1, Math.floor(hp)) }, cells);
+    if (!w) return null;
+    // Cùng luật màu với `addWrapper`: chỗ gọi chỉ định thì theo, không thì lấy màu áp đảo.
+    const color = wrapperKindInfo(kind).hasColor
+      ? (pickedColor ?? dominantColorId(get().grid, w))
+      : undefined;
+    set((s) => ({ wrappers: [...s.wrappers, { ...w, ...(color === undefined ? null : { color }) }] }));
+    return id;
+  },
+
+  isolateWrapper: null,
+  setIsolateWrapper: (isolateWrapper) => set({ isolateWrapper }),
+
+  setWrapperCells: (id, cells) =>
+    set((s) => ({
+      wrappers: s.wrappers.map((w) => {
+        if (w.id !== id) return w;
+        // Giữ nguyên loại / hp / màu, chỉ hình là đổi — và hộp bao co giãn theo tập ô mới, nên bỏ
+        // hết một lát ngoài rìa là hộp tự thu lại đúng bằng phần còn lại.
+        const next = wrapperFromCells(
+          { id: w.id, kind: w.kind, hp: w.hp, ...(w.color === undefined ? null : { color: w.color }) },
+          cells,
+        );
+        return next ?? w;
+      }),
+    })),
 
   updateWrapper: (id, patch) =>
     set((s) => ({
@@ -358,9 +428,11 @@ export const useEditor = create<EditorState>((set, get) => ({
     set((s) => ({
       wrappers: s.wrappers.filter((w) => w.id !== id),
       focusedWrapper: s.focusedWrapper === id ? null : s.focusedWrapper,
+      // Đang soi riêng lớp này mà xoá nó thì phải thôi soi, không thì màn hình trống trơn.
+      isolateWrapper: s.isolateWrapper === id ? null : s.isolateWrapper,
     })),
 
-  clearWrappers: () => set({ wrappers: [], focusedWrapper: null }),
+  clearWrappers: () => set({ wrappers: [], focusedWrapper: null, isolateWrapper: null }),
 
   setDockRowCount: (n) =>
     set((s) => {
@@ -445,8 +517,9 @@ export const useEditor = create<EditorState>((set, get) => ({
     }),
 
   autoBuildShooters: (options) => {
-    const { grid, levelMeta } = get();
-    const { setup, ...rest } = autoBuildSearch(blockCountsByColor(grid), {
+    const { grid, levelMeta, wrappers } = get();
+    // Đếm theo luật của game: khối lớn tính bằng hp chứ không phải số voxel nó nuốt.
+    const { setup, ...rest } = autoBuildSearch(shootableCountsByColor(grid, wrappers), {
       ...options,
       grid,
       dockCount: levelMeta.dockCount,

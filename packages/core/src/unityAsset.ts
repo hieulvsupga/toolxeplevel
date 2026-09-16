@@ -10,6 +10,7 @@ import type { LevelLayer } from './layers';
 import type { Vec3 } from './types';
 import {
   DEFAULT_WRAPPER_HP,
+  wrapperFromCells,
   type BoxWrapper,
   type WrapperEntry,
 } from './wrappers';
@@ -164,7 +165,7 @@ export function toUnityAsset(
   // Thứ tự các field dưới đây bám đúng thứ tự khai báo trong LevelData.cs — Unity ghi asset theo
   // thứ tự field, nên giữ nguyên thì diff giữa file mình xuất và file Unity ghi lại sau khi mở là
   // rỗng, thay vì đầy những dòng chỉ đổi chỗ.
-  /** Ghi một mảng lớp bọc (`iceWrapperData` / `shieldData` — cùng một khuôn field). */
+  /** Ghi một mảng lớp bọc (`iceWrapperData` / `largeVoxelData` — cùng một khuôn field). */
   const pushWrappers = (field: string, list: WrapperEntry[]) => {
     if (!list.length) {
       lines.push(`  ${field}: []`);
@@ -172,9 +173,15 @@ export function toUnityAsset(
     }
     lines.push(`  ${field}:`);
     for (const w of list) {
+      // Thứ tự field bám đúng khai báo C#: `LargeVoxelData` có `colorType` ĐỨNG TRƯỚC `bounds`,
+      // nên khi có màu thì chính nó mở đầu phần tử mảng còn `bounds` lùi vào một cấp.
+      if (w.colorType !== undefined) {
+        lines.push(`  - colorType: ${num(w.colorType)}`, '    bounds:');
+      } else {
+        lines.push('  - bounds:');
+      }
       // `Bounds` của Unity ghi ra thành hai vector con: m_Center và m_Extent (extent = NỬA cỡ).
       lines.push(
-        '  - bounds:',
         `      m_Center: ${vec3(flipDepthVec(w.bounds.center))}`,
         // Lật chiều sâu KHÔNG đổi độ dày, nên extent giữ nguyên dấu (nó là nửa cỡ, luôn dương).
         `      m_Extent: ${vec3(w.bounds.extent)}`,
@@ -198,23 +205,30 @@ export function toUnityAsset(
         lines.push('    innerVoxelPositions: []');
       } else {
         lines.push('    innerVoxelPositions:');
-        for (const p of w.innerVoxelPositions) lines.push(`    - ${vec3(flipDepthVec(p))}`);
+        // Xếp SAU khi lật: phép lật đảo dấu trục y nên thứ tự x→y→z của toạ độ editor ghi ra file
+        // thành y giảm dần, trong khi file của game luôn tăng dần (611/611 lớp bọc). Sắp lại ở đây
+        // cho khớp hẳn — game không quan tâm thứ tự, nhưng so file tool với file game mà lệch thì
+        // mỗi lần đối chiếu lại phải ngồi soi xem có mất ô nào không.
+        const inner = w.innerVoxelPositions
+          .map(flipDepthVec)
+          .sort((a, b) => a.x - b.x || a.y - b.y || a.z - b.z);
+        for (const p of inner) lines.push(`    - ${vec3(p)}`);
       }
     }
   };
 
   pushWrappers('iceWrapperData', wrappers.filter((w) => w.kind === 'ice'));
+  pushWrappers('largeVoxelData', wrappers.filter((w) => w.kind === 'largeVoxel'));
   lines.push(
-    '  largeVoxelData: []',
     '  doubleLargeVoxelData: []',
     '  giftWrapperData: []',
     '  playpenData: []',
     '  shrinkingCoverData: []',
     '  bombData: []',
     '  colorBoxData: []',
+    '  shieldData: []',
+    '  flyingPiggyData: []',
   );
-  pushWrappers('shieldData', wrappers.filter((w) => w.kind === 'shield'));
-  lines.push('  flyingPiggyData: []');
 
   if (shooters.blasters.length === 0) {
     lines.push('  blasters: []');
@@ -301,9 +315,14 @@ const VEC3_RE = new RegExp(
  * thụt lề và các trường mình cần đều là scalar hoặc Vector3 một dòng, nên bám sát dạng đó vừa gọn
  * vừa không kéo thêm phụ thuộc chỉ để đọc vài chục dòng.
  *
- * `iceWrapperData` và `shieldData` đọc được (về `BoxWrapper`): chỉ lấy hộp + hp, còn `hpTexts` và
- * `innerVoxelPositions` thì tính lại lúc xuất từ hộp và grid — đọc vào giữ nguyên thì chúng lệch
- * ngay khi người dùng sửa khối bên trong.
+ * `iceWrapperData` và `largeVoxelData` đọc được (về `BoxWrapper`): lấy hộp + hp (+ colorType của
+ * khối lớn). `hpTexts` thì tính lại lúc xuất từ hộp — đọc vào giữ nguyên thì lệch ngay khi người
+ * dùng sửa hộp.
+ *
+ * `innerVoxelPositions` chỉ giữ lại khi nó KHÔNG lấp kín hộp — tức lớp bọc có hình riêng (quả cầu,
+ * vỏ rỗng…). Bỏ qua thì mở file ra là hình bị nắn thành cục hộp đặc, và với khối lớn thì cái hộp đó
+ * còn nuốt luôn mấy khối thường nằm ở góc hộp (Level_79 có 72 khối như vậy). Còn lấp kín thì khỏi
+ * giữ: xuất ra tự sinh lại đúng thế, giữ chỉ tổ phình bộ nhớ.
  *
  * Các mảng cơ chế còn lại (bomb/playpen/shield…) bị bỏ qua — tool chưa dựng được chúng, và đọc vào
  * rồi ghi ra thành mảng rỗng thì tệ hơn là nói thẳng ra rằng chúng không được giữ.
@@ -345,8 +364,10 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
   const wrappers: BoxWrapper[] = [];
   /** Đang đọc mảng lớp bọc nào (null = không ở trong mảng nào). */
   let wrapperKind: BoxWrapper['kind'] | null = null;
-  /** Phần tử `iceWrapperData` đang đọc dở: chỉ cần tâm + extent + hp. */
-  let wrap: { center?: Vec3; extent?: Vec3; hp: number } | undefined;
+  /** Phần tử lớp bọc đang đọc dở: chỉ cần tâm + extent + hp (+ màu với khối lớn). */
+  let wrap:
+    | { center?: Vec3; extent?: Vec3; hp: number; color?: number; inner?: Vec3[] }
+    | undefined;
 
   /**
    * Chốt một lớp bọc vừa đọc xong: `Bounds` -> ô lưới.
@@ -360,21 +381,43 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
       // Tâm là một điểm nên phải lật chiều sâu; extent là độ dày nên không.
       const c = flipDepthVec(wrap.center);
       const e = wrap.extent;
-      wrappers.push({
+      const min = {
+        x: Math.round(c.x - e.x + 0.5),
+        y: Math.round(c.y - e.y + 0.5),
+        z: Math.round(c.z - e.z + 0.5),
+      };
+      const max = {
+        x: Math.round(c.x + e.x - 0.5),
+        y: Math.round(c.y + e.y - 0.5),
+        z: Math.round(c.z + e.z - 0.5),
+      };
+      const volume = (max.x - min.x + 1) * (max.y - min.y + 1) * (max.z - min.z + 1);
+      const base = {
         id: wrappers.length + 1,
         kind: wrapperKind ?? 'ice',
-        min: {
-          x: Math.round(c.x - e.x + 0.5),
-          y: Math.round(c.y - e.y + 0.5),
-          z: Math.round(c.z - e.z + 0.5),
-        },
-        max: {
-          x: Math.round(c.x + e.x - 0.5),
-          y: Math.round(c.y + e.y - 0.5),
-          z: Math.round(c.z + e.z - 0.5),
-        },
         hp: wrap.hp,
-      });
+        ...(wrap.color === undefined ? null : { color: wrap.color }),
+      };
+      // Đủ ô lấp kín hộp thì để dạng hộp đặc như cũ; thiếu ô là lớp bọc có hình riêng, phải giữ.
+      const shaped =
+        wrap.inner && wrap.inner.length && wrap.inner.length !== volume
+          ? wrapperFromCells(base, wrap.inner.map(flipDepthVec))
+          : null;
+      if (shaped) {
+        // Hộp bao của tập ô phải trùng `bounds` trong file. Lệch là data mâu thuẫn — theo tập ô
+        // (nó tả hình thật), nhưng nói ra để người dựng biết mà soi lại.
+        if (shaped.min.x !== min.x || shaped.max.x !== max.x ||
+            shaped.min.y !== min.y || shaped.max.y !== max.y ||
+            shaped.min.z !== min.z || shaped.max.z !== max.z) {
+          warnings.push(
+            `Lớp bọc #${base.id}: innerVoxelPositions có hộp bao lệch với bounds ghi trong file — ` +
+              `tool lấy theo danh sách ô.`,
+          );
+        }
+        wrappers.push(shaped);
+      } else {
+        wrappers.push({ ...base, min, max });
+      }
     }
     wrap = undefined;
   };
@@ -413,18 +456,25 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
         flushWrapper();
         wrapperKind = null;
       } else {
-        if (/^  - bounds:\s*$/.test(line)) {
+        // Một phần tử mới bắt đầu ở "  - " bất kể field nào mở đầu (`bounds` với băng,
+        // `colorType` với khối lớn). Các dòng con của hpTexts / innerVoxelPositions thụt sâu hơn
+        // ("    - ") nên không lẫn vào đây.
+        if (/^  - /.test(line)) {
           flushWrapper();
           wrap = { hp: DEFAULT_WRAPPER_HP };
-          continue;
         }
         if (wrap) {
-          const center = /^      m_Center:\s*(.*)$/.exec(line);
+          const color = /^(?:  - |    )colorType:\s*(-?\d+)/.exec(line);
+          if (color) {
+            wrap.color = Number(color[1]);
+            continue;
+          }
+          const center = /^\s+m_Center:\s*(.*)$/.exec(line);
           if (center) {
             wrap.center = readVec3(center[1]);
             continue;
           }
-          const extent = /^      m_Extent:\s*(.*)$/.exec(line);
+          const extent = /^\s+m_Extent:\s*(.*)$/.exec(line);
           if (extent) {
             wrap.extent = readVec3(extent[1]);
             continue;
@@ -435,8 +485,16 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
             continue;
           }
         }
-        // hpTexts và innerVoxelPositions không cần đọc: tool tính lại từ hộp + grid lúc xuất, nên
-        // đọc vào chỉ để đó rồi lệch với thực tế khi người dùng sửa khối.
+        // Ô của `innerVoxelPositions` là dòng "    - {x: …}" trơ trọi; phần tử của `hpTexts` thì
+        // luôn mở đầu bằng "    - position:" nên không lẫn.
+        const inner = /^    - (\{.*\})\s*$/.exec(line);
+        if (inner && wrap) {
+          const v = readVec3(inner[1]);
+          if (v) (wrap.inner ??= []).push(v);
+          continue;
+        }
+        // hpTexts không cần đọc: tool tính lại từ hộp lúc xuất, nên đọc vào chỉ để đó rồi lệch với
+        // thực tế khi người dùng sửa hộp.
         continue;
       }
     }
@@ -476,8 +534,8 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
       wrapperKind = 'ice';
       continue;
     }
-    if (/^  shieldData:\s*$/.test(line)) {
-      wrapperKind = 'shield';
+    if (/^  largeVoxelData:\s*$/.test(line)) {
+      wrapperKind = 'largeVoxel';
       continue;
     }
     if (/^  blasters:\s*$/.test(line)) {
@@ -522,13 +580,13 @@ export function parseUnityAsset(text: string): ParsedLevelAsset {
   // Các mảng cơ chế được ghi kèm nhưng tool chưa dựng được. Nói ra ngay lúc nhập, vì nếu xuất đè
   // lên chính file này thì chúng biến mất không dấu vết.
   const dropped = [
-    'largeVoxelData',
     'doubleLargeVoxelData',
     'giftWrapperData',
     'playpenData',
     'shrinkingCoverData',
     'bombData',
     'colorBoxData',
+    'shieldData',
     'flyingPiggyData',
   ].filter((key) => lines.some((l) => l.startsWith(`  ${key}:`) && !l.endsWith('[]')));
   if (dropped.length) {
